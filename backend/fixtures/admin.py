@@ -1,12 +1,19 @@
 from django.contrib import admin
 
-from .models import Fixture, Gameweek, Team
+from .models import Fixture, Gameweek, Player, Team
 
 
 @admin.register(Team)
 class TeamAdmin(admin.ModelAdmin):
     list_display = ("name", "short_name", "tla", "external_id")
     search_fields = ("name", "short_name", "tla")
+
+
+@admin.register(Player)
+class PlayerAdmin(admin.ModelAdmin):
+    list_display = ("web_name", "team", "external_id")
+    search_fields = ("web_name",)
+    list_filter = ("team",)
 
 
 @admin.register(Gameweek)

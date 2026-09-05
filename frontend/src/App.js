@@ -3,6 +3,7 @@ import "./App.css";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
+import FixturesPage from "./pages/FixturesPage";
 import HomePage from "./pages/HomePage";
 import LeaguePage from "./pages/LeaguePage";
 import LeaguesPage from "./pages/LeaguesPage";
@@ -39,6 +40,14 @@ function App() {
               page's own "members only" message rather than being bounced
               straight to /login. */}
           <Route path="/leagues/:publicId" element={<LeaguePage />} />
+          <Route
+            path="/fixtures"
+            element={
+              <ProtectedRoute>
+                <FixturesPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/predict"
             element={

@@ -2,14 +2,14 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase, override_settings
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Fixture, Gameweek, Team
-from .services import FootballDataError, FootballDataClient, map_status, parse_kickoff
+from .models import Fixture, Gameweek, Player, Team
+from .services import map_status, parse_kickoff
 
 User = get_user_model()
 
@@ -49,15 +49,53 @@ class ServiceHelperTests(TestCase):
         self.assertEqual(dt.hour, 14)
         self.assertIsNotNone(dt.tzinfo)
 
-    def test_map_status_known_and_unknown(self):
-        self.assertEqual(map_status("IN_PLAY"), "LIVE")
-        self.assertEqual(map_status("FINISHED"), "FINISHED")
-        self.assertEqual(map_status("SOMETHING_NEW"), "SCHEDULED")
+    def test_map_status_finished(self):
+        self.assertEqual(map_status({"finished": True, "started": True}), "FINISHED")
 
-    @override_settings(FOOTBALL_DATA_API_KEY="")
-    def test_client_requires_api_key(self):
-        with self.assertRaises(FootballDataError):
-            FootballDataClient()
+    def test_map_status_live(self):
+        self.assertEqual(map_status({"finished": False, "started": True}), "LIVE")
+
+    def test_map_status_scheduled(self):
+        self.assertEqual(map_status({"finished": False, "started": False}), "SCHEDULED")
+
+
+class TeamFormTests(TestCase):
+    def setUp(self):
+        self.team = Team.objects.create(external_id=1, name="Home FC")
+        self.opponent = Team.objects.create(external_id=2, name="Away FC")
+
+    def _finished_fixture(self, external_id, kickoff, home, away, home_score, away_score):
+        return Fixture.objects.create(
+            external_id=external_id, gameweek=Gameweek.objects.create(number=external_id),
+            home_team=home, away_team=away, kickoff_time=kickoff,
+            status=Fixture.Status.FINISHED, home_score=home_score, away_score=away_score,
+        )
+
+    def test_form_reads_oldest_to_newest_from_the_teams_perspective(self):
+        now = timezone.now()
+        # Oldest -> newest: win at home, draw away, loss at home.
+        self._finished_fixture(1, now - timedelta(days=21), self.team, self.opponent, 2, 0)
+        self._finished_fixture(2, now - timedelta(days=14), self.opponent, self.team, 1, 1)
+        self._finished_fixture(3, now - timedelta(days=7), self.team, self.opponent, 0, 3)
+
+        self.assertEqual(self.team.recent_form(), ["W", "D", "L"])
+
+    def test_form_only_counts_finished_fixtures(self):
+        now = timezone.now()
+        self._finished_fixture(1, now - timedelta(days=7), self.team, self.opponent, 1, 0)
+        Fixture.objects.create(
+            external_id=2, gameweek=Gameweek.objects.create(number=2), home_team=self.team,
+            away_team=self.opponent, kickoff_time=now + timedelta(days=7),
+        )
+
+        self.assertEqual(self.team.recent_form(), ["W"])
+
+    def test_form_is_capped_at_the_last_five_games(self):
+        now = timezone.now()
+        for i in range(7):
+            self._finished_fixture(i + 1, now - timedelta(days=7 * (7 - i)), self.team, self.opponent, 1, 0)
+
+        self.assertEqual(len(self.team.recent_form()), 5)
 
 
 class GameweekListViewTests(APITestCase):
@@ -86,6 +124,18 @@ class GameweekListViewTests(APITestCase):
         response = self.client.get(reverse("gameweek-list"))
         self.assertTrue(response.data[0]["is_locked"])
 
+    def test_lifecycle_reflects_previous_current_and_future(self):
+        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=7), is_scored=True)
+        Gameweek.objects.create(number=2, deadline=timezone.now() - timedelta(hours=1))
+        Gameweek.objects.create(number=3, deadline=timezone.now() + timedelta(days=7))
+
+        response = self.client.get(reverse("gameweek-list"))
+
+        by_number = {row["number"]: row for row in response.data}
+        self.assertEqual(by_number[1]["lifecycle"], "previous")
+        self.assertEqual(by_number[2]["lifecycle"], "current")
+        self.assertEqual(by_number[3]["lifecycle"], "future")
+
 
 class GameweekDetailViewTests(APITestCase):
     def setUp(self):
@@ -105,6 +155,21 @@ class GameweekDetailViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["fixtures"]), 1)
         self.assertEqual(response.data["fixtures"][0]["home_team"]["name"], "Home FC")
+
+    def test_fixtures_include_goalscorers_and_team_form(self):
+        Fixture.objects.filter(external_id=1).update(
+            status=Fixture.Status.FINISHED, home_score=2, away_score=0,
+            home_goals=[{"player": "Homer", "count": 2, "own_goal": False}],
+            away_goals=[],
+        )
+
+        response = self.client.get(reverse("gameweek-detail", args=[7]))
+
+        fixture = response.data["fixtures"][0]
+        self.assertEqual(fixture["home_goals"], [{"player": "Homer", "count": 2, "own_goal": False}])
+        self.assertEqual(fixture["away_goals"], [])
+        self.assertEqual(fixture["home_team"]["form"], ["W"])
+        self.assertEqual(fixture["away_team"]["form"], ["L"])
 
     def test_unknown_gameweek_returns_404(self):
         response = self.client.get(reverse("gameweek-detail", args=[999]))
@@ -207,19 +272,30 @@ class HomeGameweekViewTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+def _bootstrap(teams=None, elements=None):
+    return {
+        "teams": teams if teams is not None else [
+            {"id": 1, "name": "Home FC", "short_name": "HOM"},
+            {"id": 2, "name": "Away FC", "short_name": "AWA"},
+        ],
+        "elements": elements if elements is not None else [
+            {"id": 101, "team": 1, "web_name": "Homer"},
+            {"id": 102, "team": 2, "web_name": "Awayer"},
+        ],
+    }
+
+
 class SyncFixturesCommandTests(TestCase):
-    @override_settings(FOOTBALL_DATA_API_KEY="test-key")
-    @patch("backend.fixtures.management.commands.sync_fixtures.FootballDataClient.get_premier_league_matches")
-    def test_sync_creates_teams_gameweeks_and_fixtures(self, mock_matches):
-        mock_matches.return_value = [
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_fixtures")
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_bootstrap")
+    def test_sync_creates_teams_players_gameweeks_and_fixtures(self, mock_bootstrap, mock_fixtures):
+        mock_bootstrap.return_value = _bootstrap()
+        mock_fixtures.return_value = [
             {
-                "id": 555,
-                "matchday": 1,
-                "utcDate": "2026-08-15T14:00:00Z",
-                "status": "SCHEDULED",
-                "homeTeam": {"id": 1, "name": "Home FC", "shortName": "Home", "tla": "HOM", "crest": ""},
-                "awayTeam": {"id": 2, "name": "Away FC", "shortName": "Away", "tla": "AWA", "crest": ""},
-                "score": {"fullTime": {"home": None, "away": None}},
+                "id": 555, "event": 1, "team_h": 1, "team_a": 2,
+                "kickoff_time": "2026-08-15T14:00:00Z",
+                "started": False, "finished": False,
+                "team_h_score": None, "team_a_score": None, "stats": [],
             }
         ]
 
@@ -228,6 +304,7 @@ class SyncFixturesCommandTests(TestCase):
         call_command("sync_fixtures")
 
         self.assertEqual(Team.objects.count(), 2)
+        self.assertEqual(Player.objects.count(), 2)
         gameweek = Gameweek.objects.get(number=1)
         fixture = Fixture.objects.get(external_id=555)
         self.assertEqual(fixture.gameweek, gameweek)
@@ -235,30 +312,73 @@ class SyncFixturesCommandTests(TestCase):
         self.assertIsNotNone(gameweek.deadline)
         self.assertEqual(gameweek.deadline, fixture.kickoff_time - timedelta(hours=1))
 
-    @override_settings(FOOTBALL_DATA_API_KEY="test-key")
-    @patch("backend.fixtures.management.commands.sync_fixtures.FootballDataClient.get_premier_league_matches")
-    def test_sync_updates_existing_fixture_with_result(self, mock_matches):
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_fixtures")
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_bootstrap")
+    def test_sync_updates_existing_fixture_with_result_and_goalscorers(self, mock_bootstrap, mock_fixtures):
+        mock_bootstrap.return_value = _bootstrap()
+        raw_fixture = {
+            "id": 555, "event": 1, "team_h": 1, "team_a": 2,
+            "kickoff_time": "2026-08-15T14:00:00Z",
+            "started": False, "finished": False,
+            "team_h_score": None, "team_a_score": None, "stats": [],
+        }
+        mock_fixtures.return_value = [raw_fixture]
+
         from django.core.management import call_command
 
-        mock_matches.return_value = [
-            {
-                "id": 555,
-                "matchday": 1,
-                "utcDate": "2026-08-15T14:00:00Z",
-                "status": "SCHEDULED",
-                "homeTeam": {"id": 1, "name": "Home FC"},
-                "awayTeam": {"id": 2, "name": "Away FC"},
-                "score": {"fullTime": {"home": None, "away": None}},
-            }
-        ]
         call_command("sync_fixtures")
 
-        mock_matches.return_value[0]["status"] = "FINISHED"
-        mock_matches.return_value[0]["score"] = {"fullTime": {"home": 2, "away": 1}}
+        raw_fixture["started"] = True
+        raw_fixture["finished"] = True
+        raw_fixture["team_h_score"] = 2
+        raw_fixture["team_a_score"] = 1
+        raw_fixture["stats"] = [
+            {"identifier": "goals_scored", "h": [{"value": 2, "element": 101}], "a": [{"value": 1, "element": 102}]},
+        ]
         call_command("sync_fixtures")
 
         fixture = Fixture.objects.get(external_id=555)
         self.assertEqual(fixture.status, "FINISHED")
         self.assertEqual(fixture.home_score, 2)
         self.assertEqual(fixture.away_score, 1)
+        self.assertEqual(fixture.home_goals, [{"player": "Homer", "count": 2, "own_goal": False}])
+        self.assertEqual(fixture.away_goals, [{"player": "Awayer", "count": 1, "own_goal": False}])
         self.assertEqual(Fixture.objects.count(), 1)
+
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_fixtures")
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_bootstrap")
+    def test_sync_attributes_own_goals_to_the_opposing_team(self, mock_bootstrap, mock_fixtures):
+        mock_bootstrap.return_value = _bootstrap()
+        mock_fixtures.return_value = [
+            {
+                "id": 555, "event": 1, "team_h": 1, "team_a": 2,
+                "kickoff_time": "2026-08-15T14:00:00Z",
+                "started": True, "finished": True,
+                "team_h_score": 0, "team_a_score": 1,
+                "stats": [
+                    {"identifier": "own_goals", "h": [{"value": 1, "element": 101}], "a": []},
+                ],
+            }
+        ]
+
+        from django.core.management import call_command
+
+        call_command("sync_fixtures")
+
+        fixture = Fixture.objects.get(external_id=555)
+        self.assertEqual(fixture.home_goals, [])
+        self.assertEqual(fixture.away_goals, [{"player": "Homer", "count": 1, "own_goal": True}])
+
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_fixtures")
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_bootstrap")
+    def test_sync_skips_fixtures_without_a_confirmed_kickoff(self, mock_bootstrap, mock_fixtures):
+        mock_bootstrap.return_value = _bootstrap()
+        mock_fixtures.return_value = [
+            {"id": 555, "event": None, "team_h": 1, "team_a": 2, "kickoff_time": None, "stats": []},
+        ]
+
+        from django.core.management import call_command
+
+        call_command("sync_fixtures")
+
+        self.assertEqual(Fixture.objects.count(), 0)

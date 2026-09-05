@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "../api/client";
+import { FixtureRow } from "../components/FixtureRow";
 
 export default function HomePage() {
   const [lastScore, setLastScore] = useState(undefined);
@@ -68,26 +69,20 @@ export default function HomePage() {
       {gameweek === null && (
         <p className="muted">
           No gameweeks are loaded yet. Run <code>python manage.py sync_fixtures</code> on the backend
-          once a FOOTBALL_DATA_API_KEY is configured.
+          to pull fixtures from the Fantasy Premier League API.
         </p>
       )}
       {gameweek && (
-        <div className="fixture-list">
-          {gameweek.fixtures.map((fixture) => (
-            <div className="card fixture-row" key={fixture.id}>
-              <span className="team home">{fixture.home_team.name}</span>
-              <span className="score-sep">
-                {fixture.status === "FINISHED" ? `${fixture.home_score} - ${fixture.away_score}` : "vs"}
-              </span>
-              <span className="team away">{fixture.away_team.name}</span>
-              <span className="final-score muted">
-                {fixture.status === "FINISHED"
-                  ? "Full time"
-                  : new Date(fixture.kickoff_time).toLocaleString()}
-              </span>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="fixture-list">
+            {gameweek.fixtures.map((fixture) => (
+              <FixtureRow fixture={fixture} key={fixture.id} />
+            ))}
+          </div>
+          <Link to="/fixtures" className="back-link">
+            See all gameweeks, scores &amp; form &rarr;
+          </Link>
+        </>
       )}
     </div>
   );

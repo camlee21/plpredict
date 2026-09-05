@@ -129,7 +129,7 @@ export default function PredictionsPage() {
       {gameweeks.length === 0 && !error && (
         <p className="muted">
           No gameweeks are loaded yet. Run <code>python manage.py sync_fixtures</code> on the backend
-          once a FOOTBALL_DATA_API_KEY is configured.
+          to pull fixtures from the Fantasy Premier League API.
         </p>
       )}
 

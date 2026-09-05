@@ -135,11 +135,9 @@ SIMPLE_JWT = {
 # backend uses it to verify the audience of the ID token it receives.
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 
-# football-data.org API key used to pull real Premier League fixture/result
-# data. Get a free key at https://www.football-data.org/client/register
-FOOTBALL_DATA_API_KEY = os.environ.get("FOOTBALL_DATA_API_KEY", "")
-FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4"
-PREMIER_LEAGUE_COMPETITION_CODE = "PL"
+# Fantasy Premier League's public API - free, no key required. Used to pull
+# real Premier League teams/players/fixtures/results for the current season.
+FPL_BASE_URL = os.environ.get("FPL_BASE_URL", "https://fantasy.premierleague.com/api")
 
 # How long before a gameweek's first kickoff predictions lock.
 PREDICTION_LOCK_BEFORE_KICKOFF = timedelta(hours=1)

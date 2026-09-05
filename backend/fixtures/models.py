@@ -1,5 +1,7 @@
 from django.db import models
 
+FORM_LENGTH = 5
+
 
 class Team(models.Model):
     external_id = models.IntegerField(unique=True)
@@ -10,6 +12,42 @@ class Team(models.Model):
 
     def __str__(self):
         return self.name
+
+    def recent_form(self, limit=FORM_LENGTH):
+        """The team's last `limit` results as a list of "W"/"D"/"L",
+        oldest first, based on finished fixtures up to now."""
+        fixtures = (
+            Fixture.objects.filter(
+                models.Q(home_team=self) | models.Q(away_team=self),
+                status=Fixture.Status.FINISHED,
+                home_score__isnull=False,
+                away_score__isnull=False,
+            )
+            .order_by("-kickoff_time")[:limit]
+        )
+        results = []
+        for fixture in fixtures:
+            if fixture.home_team_id == self.id:
+                goals_for, goals_against = fixture.home_score, fixture.away_score
+            else:
+                goals_for, goals_against = fixture.away_score, fixture.home_score
+            if goals_for > goals_against:
+                results.append("W")
+            elif goals_for < goals_against:
+                results.append("L")
+            else:
+                results.append("D")
+        results.reverse()
+        return results
+
+
+class Player(models.Model):
+    external_id = models.IntegerField(unique=True)
+    team = models.ForeignKey(Team, related_name="players", on_delete=models.CASCADE)
+    web_name = models.CharField(max_length=100)
+
+    def __str__(self):
+        return self.web_name
 
 
 class Gameweek(models.Model):
@@ -54,6 +92,9 @@ class Fixture(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.SCHEDULED)
     home_score = models.PositiveSmallIntegerField(null=True, blank=True)
     away_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Each entry: {"player": "<web name>", "count": <goals>, "own_goal": bool}.
+    home_goals = models.JSONField(default=list, blank=True)
+    away_goals = models.JSONField(default=list, blank=True)
 
     class Meta:
         ordering = ["kickoff_time"]

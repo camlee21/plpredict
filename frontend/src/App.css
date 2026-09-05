@@ -352,18 +352,48 @@ button.secondary {
 
 .fixture-row {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 20px;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px 20px;
 }
 
-.fixture-row .team {
+.fixture-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.team-col {
   flex: 1;
-  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
 }
 
-.fixture-row .team.home {
+.team-col.home {
+  align-items: flex-end;
   text-align: right;
+}
+
+.team-col.away {
+  align-items: flex-start;
+  text-align: left;
+}
+
+.team-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.team-badge {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  flex-shrink: 0;
 }
 
 .fixture-row input[type="number"] {
@@ -371,27 +401,87 @@ button.secondary {
   text-align: center;
 }
 
-.fixture-row .score-sep {
+.score-box {
+  flex-shrink: 0;
+  min-width: 76px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--purple);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1.35rem;
+  letter-spacing: 0.5px;
+  text-align: center;
+}
+
+.score-box.pending {
+  background: transparent;
+  border: 1px solid var(--border);
   color: var(--muted);
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.score-box.live {
+  box-shadow: 0 0 0 2px var(--green);
 }
 
 .fixture-row .final-score {
-  flex-basis: 100%;
   text-align: center;
   font-size: 0.85rem;
-  margin-top: 6px;
+}
+
+.fixture-row .goalscorers {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.form-badges {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.form-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: white;
+}
+
+.form-badge.w {
+  background: #1a9b56;
+}
+
+.form-badge.d {
+  background: #8a8494;
+}
+
+.form-badge.l {
+  background: #d1354b;
 }
 
 @media (max-width: 640px) {
   .league-actions {
     grid-template-columns: 1fr;
   }
-  .fixture-row {
+  .fixture-main {
     flex-wrap: wrap;
     justify-content: center;
   }
-  .fixture-row .team {
-    flex-basis: 40%;
+  .team-col.home,
+  .team-col.away {
+    flex-basis: 100%;
+    align-items: center;
     text-align: center;
+    order: 2;
+  }
+  .score-box {
+    order: 1;
   }
 }

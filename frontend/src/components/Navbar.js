@@ -20,6 +20,7 @@ export default function Navbar() {
       <div className="nav-links">
         <Link to="/">Home</Link>
         <Link to="/leagues">Leagues</Link>
+        <Link to="/fixtures">Fixtures</Link>
         <Link to="/predict">Predict</Link>
         <span className="nav-user">{user.username}</span>
         <button className="link-button" onClick={handleLogout}>
