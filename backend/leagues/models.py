@@ -4,7 +4,13 @@ import string
 from django.conf import settings
 from django.db import models
 
+from .validators import validate_no_profanity
+
 CODE_CHARS = string.ascii_uppercase + string.digits
+
+MAX_MEMBERS_CHOICES = [(n, str(n)) for n in (4, 8, 16, 32, 64, 128)]
+DEFAULT_MAX_MEMBERS = 8
+LEAGUE_NAME_MAX_LENGTH = 32
 
 
 def generate_league_code():
@@ -14,9 +20,26 @@ def generate_league_code():
             return code
 
 
+def generate_public_id():
+    while True:
+        public_id = "".join(random.choices(CODE_CHARS, k=8))
+        if not League.objects.filter(public_id=public_id).exists():
+            return public_id
+
+
 class League(models.Model):
-    name = models.CharField(max_length=100)
+    name = models.CharField(max_length=LEAGUE_NAME_MAX_LENGTH, validators=[validate_no_profanity])
+    # Shown in shareable links/URLs. Safe to expose publicly - unlike `code`,
+    # it doesn't grant join access on its own.
+    public_id = models.CharField(max_length=8, unique=True, editable=False)
+    # The invite code private leagues are joined with. Only ever shown to
+    # existing members.
     code = models.CharField(max_length=6, unique=True, editable=False)
+    is_public = models.BooleanField(
+        default=False,
+        help_text="Public leagues are listed for anyone to browse and join freely.",
+    )
+    max_members = models.PositiveSmallIntegerField(choices=MAX_MEMBERS_CHOICES, default=DEFAULT_MAX_MEMBERS)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="owned_leagues", on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
     members = models.ManyToManyField(
@@ -26,6 +49,8 @@ class League(models.Model):
     def save(self, *args, **kwargs):
         if not self.code:
             self.code = generate_league_code()
+        if not self.public_id:
+            self.public_id = generate_public_id()
         super().save(*args, **kwargs)
 
     def __str__(self):

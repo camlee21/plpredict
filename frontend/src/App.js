@@ -25,14 +25,11 @@ function App() {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/leagues/:id"
-            element={
-              <ProtectedRoute>
-                <LeaguePage />
-              </ProtectedRoute>
-            }
-          />
+          {/* Not wrapped in ProtectedRoute: a logged-out visitor (or a
+              logged-in non-member) following a league link should see the
+              page's own "members only" message rather than being bounced
+              straight to /login. */}
+          <Route path="/leagues/:publicId" element={<LeaguePage />} />
           <Route
             path="/predict"
             element={

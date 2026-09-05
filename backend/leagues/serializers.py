@@ -1,22 +1,66 @@
 from rest_framework import serializers
 
-from .models import League
+from .models import MAX_MEMBERS_CHOICES, League
+
+MAX_MEMBERS_VALUES = [choice[0] for choice in MAX_MEMBERS_CHOICES]
 
 
 class LeagueSerializer(serializers.ModelSerializer):
+    """Full detail, for members only - includes the private join code."""
+
     owner_username = serializers.CharField(source="owner.username", read_only=True)
     member_count = serializers.IntegerField(source="memberships.count", read_only=True)
+    is_full = serializers.SerializerMethodField()
 
     class Meta:
         model = League
-        fields = ("id", "name", "code", "owner_username", "member_count", "created_at")
-        read_only_fields = ("code", "owner_username", "member_count", "created_at")
+        fields = (
+            "public_id", "name", "code", "is_public", "max_members",
+            "owner_username", "member_count", "is_full", "created_at",
+        )
+        read_only_fields = fields
+
+    def get_is_full(self, obj):
+        return obj.memberships.count() >= obj.max_members
+
+
+class PublicLeagueSerializer(serializers.ModelSerializer):
+    """Browse listing for public leagues - never exposes the join code."""
+
+    owner_username = serializers.CharField(source="owner.username", read_only=True)
+    member_count = serializers.IntegerField(source="memberships.count", read_only=True)
+    is_full = serializers.SerializerMethodField()
+    is_member = serializers.SerializerMethodField()
+
+    class Meta:
+        model = League
+        fields = (
+            "public_id", "name", "max_members", "owner_username",
+            "member_count", "is_full", "is_member", "created_at",
+        )
+
+    def get_is_full(self, obj):
+        return obj.memberships.count() >= obj.max_members
+
+    def get_is_member(self, obj):
+        request = self.context.get("request")
+        if request is None or not request.user.is_authenticated:
+            return False
+        return obj.memberships.filter(user=request.user).exists()
 
 
 class CreateLeagueSerializer(serializers.ModelSerializer):
+    max_members = serializers.ChoiceField(choices=MAX_MEMBERS_VALUES, default=8)
+
     class Meta:
         model = League
-        fields = ("name",)
+        fields = ("name", "is_public", "max_members")
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("League name cannot be blank.")
+        return value
 
 
 class JoinLeagueSerializer(serializers.Serializer):
@@ -24,9 +68,3 @@ class JoinLeagueSerializer(serializers.Serializer):
 
     def validate_code(self, value):
         return value.upper()
-
-
-class StandingRowSerializer(serializers.Serializer):
-    user_id = serializers.IntegerField()
-    username = serializers.CharField()
-    total_points = serializers.IntegerField()

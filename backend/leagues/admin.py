@@ -10,6 +10,7 @@ class LeagueMembershipInline(admin.TabularInline):
 
 @admin.register(League)
 class LeagueAdmin(admin.ModelAdmin):
-    list_display = ("name", "code", "owner", "created_at")
-    search_fields = ("name", "code")
+    list_display = ("name", "public_id", "code", "is_public", "max_members", "owner", "created_at")
+    list_filter = ("is_public",)
+    search_fields = ("name", "code", "public_id")
     inlines = [LeagueMembershipInline]

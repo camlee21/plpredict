@@ -1,35 +1,69 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "../api/client";
 
+const MAX_MEMBERS_OPTIONS = [4, 8, 16, 32, 64, 128];
+const LEAGUE_NAME_MAX_LENGTH = 32;
+
 export default function DashboardPage() {
   const [leagues, setLeagues] = useState(null);
+  const [publicLeagues, setPublicLeagues] = useState(null);
   const [error, setError] = useState("");
   const [newLeagueName, setNewLeagueName] = useState("");
+  const [isPublic, setIsPublic] = useState(false);
+  const [maxMembers, setMaxMembers] = useState(8);
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [joiningId, setJoiningId] = useState(null);
 
-  const loadLeagues = async () => {
+  const [search, setSearch] = useState("");
+  const [createdAfter, setCreatedAfter] = useState("");
+  const [createdBefore, setCreatedBefore] = useState("");
+
+  const loadMyLeagues = useCallback(async () => {
     try {
-      const data = await apiRequest("/api/leagues/");
-      setLeagues(data);
+      setLeagues(await apiRequest("/api/leagues/"));
     } catch (err) {
       setError(err.message);
     }
-  };
+  }, []);
+
+  const loadPublicLeagues = useCallback(async () => {
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (createdAfter) params.set("created_after", createdAfter);
+    if (createdBefore) params.set("created_before", createdBefore);
+    const query = params.toString();
+
+    try {
+      setPublicLeagues(await apiRequest(`/api/leagues/browse/${query ? `?${query}` : ""}`));
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [search, createdAfter, createdBefore]);
 
   useEffect(() => {
-    loadLeagues();
-  }, []);
+    loadMyLeagues();
+  }, [loadMyLeagues]);
+
+  useEffect(() => {
+    const timeout = setTimeout(loadPublicLeagues, 300);
+    return () => clearTimeout(timeout);
+  }, [loadPublicLeagues]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
     setError("");
     setBusy(true);
     try {
-      await apiRequest("/api/leagues/", { method: "POST", body: { name: newLeagueName } });
+      await apiRequest("/api/leagues/", {
+        method: "POST",
+        body: { name: newLeagueName, is_public: isPublic, max_members: maxMembers },
+      });
       setNewLeagueName("");
-      await loadLeagues();
+      setIsPublic(false);
+      setMaxMembers(8);
+      await Promise.all([loadMyLeagues(), loadPublicLeagues()]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -44,11 +78,24 @@ export default function DashboardPage() {
     try {
       await apiRequest("/api/leagues/join/", { method: "POST", body: { code: joinCode } });
       setJoinCode("");
-      await loadLeagues();
+      await Promise.all([loadMyLeagues(), loadPublicLeagues()]);
     } catch (err) {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const handleJoinPublic = async (publicId) => {
+    setError("");
+    setJoiningId(publicId);
+    try {
+      await apiRequest(`/api/leagues/${publicId}/join/`, { method: "POST" });
+      await Promise.all([loadMyLeagues(), loadPublicLeagues()]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setJoiningId(null);
     }
   };
 
@@ -66,8 +113,23 @@ export default function DashboardPage() {
               value={newLeagueName}
               onChange={(e) => setNewLeagueName(e.target.value)}
               placeholder="e.g. Office Sweepstake"
+              maxLength={LEAGUE_NAME_MAX_LENGTH}
               required
             />
+          </label>
+          <label>
+            Max members
+            <select value={maxMembers} onChange={(e) => setMaxMembers(Number(e.target.value))}>
+              {MAX_MEMBERS_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="checkbox-label">
+            <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
+            Public (listed for anyone to browse and join)
           </label>
           <button className="primary" type="submit" disabled={busy}>
             Create
@@ -75,7 +137,7 @@ export default function DashboardPage() {
         </form>
 
         <form className="card" onSubmit={handleJoin}>
-          <h2>Join a league</h2>
+          <h2>Join a private league</h2>
           <label>
             6-character code
             <input
@@ -97,11 +159,60 @@ export default function DashboardPage() {
       {leagues && leagues.length === 0 && <p className="muted">You haven't joined any leagues yet.</p>}
       <div className="league-grid">
         {leagues?.map((league) => (
-          <Link to={`/leagues/${league.id}`} key={league.id} className="card league-card">
+          <Link to={`/leagues/${league.public_id}`} key={league.public_id} className="card league-card">
             <h3>{league.name}</h3>
-            <p className="muted">Code: {league.code}</p>
-            <p className="muted">{league.member_count} member{league.member_count === 1 ? "" : "s"}</p>
+            <p className="muted">{league.is_public ? "Public" : "Private"}</p>
+            <p className="muted">
+              {league.member_count}/{league.max_members} member{league.member_count === 1 ? "" : "s"}
+            </p>
           </Link>
+        ))}
+      </div>
+
+      <h2>Browse public leagues</h2>
+      <div className="browse-filters">
+        <label>
+          Search by name
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="e.g. Office"
+          />
+        </label>
+        <label>
+          Created after
+          <input type="date" value={createdAfter} onChange={(e) => setCreatedAfter(e.target.value)} />
+        </label>
+        <label>
+          Created before
+          <input type="date" value={createdBefore} onChange={(e) => setCreatedBefore(e.target.value)} />
+        </label>
+      </div>
+
+      {publicLeagues === null && <p>Loading...</p>}
+      {publicLeagues && publicLeagues.length === 0 && (
+        <p className="muted">No public leagues match your filters.</p>
+      )}
+      <div className="league-grid">
+        {publicLeagues?.map((league) => (
+          <div className="card league-card" key={league.public_id}>
+            <h3>{league.name}</h3>
+            <p className="muted">By {league.owner_username}</p>
+            <p className="muted">
+              {league.member_count}/{league.max_members} members
+            </p>
+            {league.is_member ? (
+              <Link to={`/leagues/${league.public_id}`}>View league</Link>
+            ) : (
+              <button
+                className="secondary"
+                disabled={league.is_full || joiningId === league.public_id}
+                onClick={() => handleJoinPublic(league.public_id)}
+              >
+                {league.is_full ? "Full" : joiningId === league.public_id ? "Joining..." : "Join"}
+              </button>
+            )}
+          </div>
         ))}
       </div>
     </div>
