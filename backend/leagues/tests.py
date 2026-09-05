@@ -42,20 +42,26 @@ class LeagueCreationTests(APITestCase):
         self.assertNotEqual(response.data["public_id"], response.data["code"])
         self.assertNotIn("id", response.data)
 
-    def test_league_defaults_to_private_with_eight_max_members(self):
-        response = self.client.post(reverse("league-list-create"), {"name": "Office League"})
+    def test_league_defaults_to_public_with_eight_max_members(self):
+        # JSON, not the default multipart test-client format: a form-encoded
+        # POST omitting a BooleanField is treated by DRF as an unchecked
+        # HTML checkbox (explicit False), which would mask the real model
+        # default here. Our frontend always sends JSON, as a real client
+        # that just omits the field (rather than submitting an HTML form)
+        # would.
+        response = self.client.post(reverse("league-list-create"), {"name": "Office League"}, format="json")
 
-        self.assertFalse(response.data["is_public"])
+        self.assertTrue(response.data["is_public"])
         self.assertEqual(response.data["max_members"], 8)
 
-    def test_can_create_public_league_with_custom_max_members(self):
+    def test_can_create_private_league_with_custom_max_members(self):
         response = self.client.post(
             reverse("league-list-create"),
-            {"name": "Open League", "is_public": True, "max_members": 32},
+            {"name": "Closed League", "is_public": False, "max_members": 32},
         )
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertTrue(response.data["is_public"])
+        self.assertFalse(response.data["is_public"])
         self.assertEqual(response.data["max_members"], 32)
 
     def test_rejects_max_members_outside_allowed_choices(self):
@@ -329,6 +335,85 @@ class LeagueStandingsTests(APITestCase):
         self.client.force_authenticate(user=self.outsider)
         response = self.client.get(reverse("league-detail", args=[self.league.public_id]))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class LeagueStandingsTiedRankingTests(APITestCase):
+    """u1=20, u2=18, u3=17, u4=17, u5=15 -> 1st, 2nd, =3rd, =3rd, 5th."""
+
+    def setUp(self):
+        self.users = {
+            name: User.objects.create_user(username=name, email=f"{name}@example.com", password="pw12345678")
+            for name in ("u1", "u2", "u3", "u4", "u5")
+        }
+        self.league = League.objects.create(name="Ranked League", owner=self.users["u1"])
+        for user in self.users.values():
+            LeagueMembership.objects.create(league=self.league, user=user)
+
+        home = Team.objects.create(external_id=1, name="Home FC")
+        away = Team.objects.create(external_id=2, name="Away FC")
+        gameweek = Gameweek.objects.create(number=1, is_scored=True)
+        points_by_user = {"u1": 20, "u2": 18, "u3": 17, "u4": 17, "u5": 15}
+        for index, (name, points) in enumerate(points_by_user.items()):
+            fixture = Fixture.objects.create(
+                external_id=index + 1, gameweek=gameweek, home_team=home, away_team=away,
+                kickoff_time=timezone.now(), status=Fixture.Status.FINISHED, home_score=2, away_score=1,
+            )
+            Prediction.objects.create(
+                user=self.users[name], fixture=fixture, predicted_home_score=2, predicted_away_score=1, points=points
+            )
+
+    def test_tied_scores_share_a_rank_and_skip_the_next(self):
+        self.client.force_authenticate(user=self.users["u1"])
+        response = self.client.get(reverse("league-detail", args=[self.league.public_id]))
+
+        by_username = {row["username"]: row for row in response.data["standings"]}
+        self.assertEqual(by_username["u1"]["rank_display"], "1st")
+        self.assertEqual(by_username["u2"]["rank_display"], "2nd")
+        self.assertEqual(by_username["u3"]["rank_display"], "=3rd")
+        self.assertEqual(by_username["u4"]["rank_display"], "=3rd")
+        self.assertEqual(by_username["u5"]["rank_display"], "5th")
+
+
+class LeagueHomeSummaryTests(APITestCase):
+    def setUp(self):
+        self.alice = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.bob = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+
+        self.league = League.objects.create(name="Office League", owner=self.alice)
+        LeagueMembership.objects.create(league=self.league, user=self.alice)
+        LeagueMembership.objects.create(league=self.league, user=self.bob)
+
+        home = Team.objects.create(external_id=1, name="Home FC")
+        away = Team.objects.create(external_id=2, name="Away FC")
+        gameweek = Gameweek.objects.create(number=1, is_scored=True)
+        fixture = Fixture.objects.create(
+            external_id=1, gameweek=gameweek, home_team=home, away_team=away,
+            kickoff_time=timezone.now(), status=Fixture.Status.FINISHED, home_score=2, away_score=1,
+        )
+        Prediction.objects.create(user=self.alice, fixture=fixture, predicted_home_score=2, predicted_away_score=1, points=3)
+        Prediction.objects.create(user=self.bob, fixture=fixture, predicted_home_score=1, predicted_away_score=1, points=0)
+
+    def test_returns_rank_and_points_for_each_league_the_user_is_in(self):
+        self.client.force_authenticate(user=self.bob)
+        response = self.client.get(reverse("league-home-summary"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        row = response.data[0]
+        self.assertEqual(row["public_id"], self.league.public_id)
+        self.assertEqual(row["total_points"], 0)
+        self.assertEqual(row["rank_display"], "2nd")
+
+    def test_empty_when_the_user_has_no_leagues(self):
+        outsider = User.objects.create_user(username="eve", email="eve@example.com", password="pw12345678")
+        self.client.force_authenticate(user=outsider)
+        response = self.client.get(reverse("league-home-summary"))
+        self.assertEqual(response.data, [])
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.get(reverse("league-home-summary"))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 class LeagueNameValidationTests(APITestCase):

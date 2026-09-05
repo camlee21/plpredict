@@ -3,8 +3,9 @@ import "./App.css";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
-import DashboardPage from "./pages/DashboardPage";
+import HomePage from "./pages/HomePage";
 import LeaguePage from "./pages/LeaguePage";
+import LeaguesPage from "./pages/LeaguesPage";
 import LoginPage from "./pages/LoginPage";
 import PredictionsPage from "./pages/PredictionsPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -21,7 +22,15 @@ function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <DashboardPage />
+                <HomePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/leagues"
+            element={
+              <ProtectedRoute>
+                <LeaguesPage />
               </ProtectedRoute>
             }
           />

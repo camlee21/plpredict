@@ -13,6 +13,31 @@ from .models import League, LeagueMembership
 from .serializers import CreateLeagueSerializer, JoinLeagueSerializer, LeagueSerializer, PublicLeagueSerializer
 
 
+def _rank_by_points(rows):
+    """Assigns standard competition ranking (1, 2, =3, =3, 5, ...) to `rows`
+    (dicts with a "total_points" key), sorted highest points first."""
+    rows = sorted(rows, key=lambda row: row["total_points"], reverse=True)
+    rank = 0
+    for index, row in enumerate(rows):
+        if index == 0 or row["total_points"] != rows[index - 1]["total_points"]:
+            rank = index + 1
+        row["rank"] = rank
+    tied_counts = {}
+    for row in rows:
+        tied_counts[row["rank"]] = tied_counts.get(row["rank"], 0) + 1
+    for row in rows:
+        row["rank_display"] = _ordinal(row["rank"]) if tied_counts[row["rank"]] == 1 else f"={_ordinal(row['rank'])}"
+    return rows
+
+
+def _ordinal(n):
+    if 10 <= n % 100 <= 20:
+        suffix = "th"
+    else:
+        suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def _join_league(user, league):
     """Adds `user` to `league` if there's room, locking the row to avoid a
     race letting the league exceed max_members under concurrent joins."""
@@ -126,7 +151,7 @@ class LeagueDetailView(APIView):
                     "total_points": totals.get(membership.user_id, 0),
                 }
             )
-        standings.sort(key=lambda row: row["total_points"], reverse=True)
+        standings = _rank_by_points(standings)
 
         return Response(
             {
@@ -135,3 +160,38 @@ class LeagueDetailView(APIView):
                 "standings": standings,
             }
         )
+
+
+class LeagueHomeSummaryView(APIView):
+    """The current user's rank and points in each league they belong to,
+    for the home page's "your position in each league" panel."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        summaries = []
+        for league in League.objects.filter(memberships__user=request.user):
+            member_ids = list(league.memberships.values_list("user_id", flat=True))
+            totals = {
+                row["user__id"]: row["total"] or 0
+                for row in Prediction.objects.filter(
+                    user_id__in=member_ids, fixture__gameweek__is_scored=True
+                )
+                .values("user__id")
+                .annotate(total=Sum("points"))
+            }
+            standings = _rank_by_points(
+                [{"user_id": uid, "total_points": totals.get(uid, 0)} for uid in member_ids]
+            )
+            mine = next(row for row in standings if row["user_id"] == request.user.id)
+            summaries.append(
+                {
+                    "public_id": league.public_id,
+                    "name": league.name,
+                    "member_count": len(member_ids),
+                    "total_points": mine["total_points"],
+                    "rank": mine["rank"],
+                    "rank_display": mine["rank_display"],
+                }
+            )
+        return Response(summaries)

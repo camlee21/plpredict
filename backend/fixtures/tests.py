@@ -140,6 +140,73 @@ class CurrentGameweekViewTests(APITestCase):
         self.assertEqual(response.data["number"], 2)
 
 
+class HomeGameweekViewTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.client.force_authenticate(user=self.user)
+        self.home = Team.objects.create(external_id=1, name="Home FC")
+        self.away = Team.objects.create(external_id=2, name="Away FC")
+
+    def _add_fixture(self, gameweek, kickoff, external_id):
+        return Fixture.objects.create(
+            external_id=external_id, gameweek=gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=kickoff,
+        )
+
+    def test_returns_404_when_nothing_synced(self):
+        response = self.client.get(reverse("gameweek-home"))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_shows_the_in_progress_gameweek_over_an_upcoming_one(self):
+        live = Gameweek.objects.create(
+            number=1, finalize_after=timezone.now() + timedelta(hours=1)
+        )
+        self._add_fixture(live, timezone.now() - timedelta(hours=1), external_id=1)
+        upcoming = Gameweek.objects.create(
+            number=2, finalize_after=timezone.now() + timedelta(days=8)
+        )
+        self._add_fixture(upcoming, timezone.now() + timedelta(days=7), external_id=2)
+
+        response = self.client.get(reverse("gameweek-home"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["number"], live.number)
+        self.assertEqual(response.data["phase"], "current")
+
+    def test_shows_the_next_upcoming_gameweek_when_none_is_in_progress(self):
+        finished = Gameweek.objects.create(
+            number=1, finalize_after=timezone.now() - timedelta(days=1)
+        )
+        self._add_fixture(finished, timezone.now() - timedelta(days=2), external_id=1)
+        upcoming = Gameweek.objects.create(
+            number=2, finalize_after=timezone.now() + timedelta(days=8)
+        )
+        self._add_fixture(upcoming, timezone.now() + timedelta(days=7), external_id=2)
+
+        response = self.client.get(reverse("gameweek-home"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["number"], upcoming.number)
+        self.assertEqual(response.data["phase"], "upcoming")
+
+    def test_falls_back_to_the_most_recent_gameweek_once_the_season_is_over(self):
+        finished = Gameweek.objects.create(
+            number=1, finalize_after=timezone.now() - timedelta(days=1)
+        )
+        self._add_fixture(finished, timezone.now() - timedelta(days=2), external_id=1)
+
+        response = self.client.get(reverse("gameweek-home"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["number"], finished.number)
+        self.assertEqual(response.data["phase"], "current")
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.get(reverse("gameweek-home"))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
 class SyncFixturesCommandTests(TestCase):
     @override_settings(FOOTBALL_DATA_API_KEY="test-key")
     @patch("backend.fixtures.management.commands.sync_fixtures.FootballDataClient.get_premier_league_matches")

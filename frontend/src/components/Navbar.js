@@ -18,7 +18,8 @@ export default function Navbar() {
         PL Predict
       </Link>
       <div className="nav-links">
-        <Link to="/">Leagues</Link>
+        <Link to="/">Home</Link>
+        <Link to="/leagues">Leagues</Link>
         <Link to="/predict">Predict</Link>
         <span className="nav-user">{user.username}</span>
         <button className="link-button" onClick={handleLogout}>

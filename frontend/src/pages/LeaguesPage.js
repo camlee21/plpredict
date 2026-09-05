@@ -5,12 +5,12 @@ import { apiRequest } from "../api/client";
 const MAX_MEMBERS_OPTIONS = [4, 8, 16, 32, 64, 128];
 const LEAGUE_NAME_MAX_LENGTH = 32;
 
-export default function DashboardPage() {
+export default function LeaguesPage() {
   const [leagues, setLeagues] = useState(null);
   const [publicLeagues, setPublicLeagues] = useState(null);
   const [error, setError] = useState("");
   const [newLeagueName, setNewLeagueName] = useState("");
-  const [isPublic, setIsPublic] = useState(false);
+  const [isPublic, setIsPublic] = useState(true);
   const [maxMembers, setMaxMembers] = useState(8);
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -61,7 +61,7 @@ export default function DashboardPage() {
         body: { name: newLeagueName, is_public: isPublic, max_members: maxMembers },
       });
       setNewLeagueName("");
-      setIsPublic(false);
+      setIsPublic(true);
       setMaxMembers(8);
       await Promise.all([loadMyLeagues(), loadPublicLeagues()]);
     } catch (err) {
@@ -101,7 +101,7 @@ export default function DashboardPage() {
 
   return (
     <div className="page">
-      <h1>Your leagues</h1>
+      <h1>Leagues</h1>
       {error && <div className="error-banner">{error}</div>}
 
       <div className="league-actions">
@@ -127,9 +127,12 @@ export default function DashboardPage() {
               ))}
             </select>
           </label>
-          <label className="checkbox-label">
-            <input type="checkbox" checked={isPublic} onChange={(e) => setIsPublic(e.target.checked)} />
-            Public (listed for anyone to browse and join)
+          <label>
+            Visibility
+            <select value={isPublic ? "public" : "private"} onChange={(e) => setIsPublic(e.target.value === "public")}>
+              <option value="public">Public (listed for anyone to browse and join)</option>
+              <option value="private">Private (join by invite code only)</option>
+            </select>
           </label>
           <button className="primary" type="submit" disabled={busy}>
             Create

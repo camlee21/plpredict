@@ -36,7 +36,7 @@ class League(models.Model):
     # existing members.
     code = models.CharField(max_length=6, unique=True, editable=False)
     is_public = models.BooleanField(
-        default=False,
+        default=True,
         help_text="Public leagues are listed for anyone to browse and join freely.",
     )
     max_members = models.PositiveSmallIntegerField(choices=MAX_MEMBERS_CHOICES, default=DEFAULT_MAX_MEMBERS)

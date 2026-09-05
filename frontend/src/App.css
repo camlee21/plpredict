@@ -248,14 +248,22 @@ button.secondary {
   margin: 0 0 16px;
 }
 
-.league-code-banner .share-link {
-  flex: 1;
-  overflow-x: auto;
-  white-space: nowrap;
-  background: var(--bg);
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-size: 0.85rem;
+.home-last-score {
+  max-width: 260px;
+  margin-bottom: 24px;
+}
+
+.home-last-score h2 {
+  margin: 0 0 4px;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.score-highlight {
+  font-size: 2.2rem;
+  font-weight: 800;
+  color: var(--purple);
+  margin: 0;
 }
 
 .auth-required-card {
@@ -293,16 +301,6 @@ button.secondary {
 
 .browse-filters label {
   min-width: 160px;
-}
-
-.checkbox-label {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-
-.checkbox-label input {
-  width: auto;
 }
 
 .standings-table {
