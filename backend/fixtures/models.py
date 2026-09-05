@@ -78,16 +78,30 @@ class Gameweek(models.Model):
         self.save(update_fields=["deadline", "finalize_after"])
 
 
+def _earliest_unscored_gameweek():
+    return Gameweek.objects.filter(is_scored=False).order_by("number").first()
+
+
 def current_gameweek_number():
-    """The gameweek number to treat as "now": the next one that hasn't
-    locked yet, or the most recent one once the season is over. Returns
-    None if no gameweeks have been synced yet."""
-    now = timezone.now()
-    gameweek = (
-        Gameweek.objects.filter(deadline__gt=now).order_by("deadline").first()
-        or Gameweek.objects.order_by("-number").first()
-    )
+    """The gameweek number to treat as "now". A gameweek is current from the
+    moment the previous one is scored until it is itself scored - i.e. the
+    earliest one not yet scored - regardless of whether its own deadline has
+    passed. Falls back to the most recent gameweek once the whole season is
+    scored. None if no gameweeks have been synced yet."""
+    gameweek = _earliest_unscored_gameweek() or Gameweek.objects.order_by("-number").first()
     return gameweek.number if gameweek else None
+
+
+def next_predictable_gameweek_number():
+    """The one gameweek predictions can currently be submitted for: the
+    current gameweek (see `current_gameweek_number`), but only while its own
+    deadline hasn't passed yet. A gameweek stays "current" after its deadline
+    passes (it's in progress, awaiting results) but is no longer predictable.
+    None if no gameweek is currently open for predictions."""
+    gameweek = _earliest_unscored_gameweek()
+    if gameweek is None or gameweek.deadline is None or gameweek.deadline <= timezone.now():
+        return None
+    return gameweek.number
 
 
 class Fixture(models.Model):

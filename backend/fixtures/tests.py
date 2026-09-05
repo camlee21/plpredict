@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Fixture, Gameweek, Player, Team
+from .models import Fixture, Gameweek, Player, Team, next_predictable_gameweek_number
 from .services import map_status, parse_kickoff
 
 User = get_user_model()
@@ -194,24 +194,61 @@ class CurrentGameweekViewTests(APITestCase):
         response = self.client.get(reverse("gameweek-current"))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_returns_next_upcoming_gameweek(self):
-        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=1))
-        soon = Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(hours=2))
+    def test_returns_the_earliest_unscored_gameweek(self):
+        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=7), is_scored=True)
+        current = Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(hours=2))
         Gameweek.objects.create(number=3, deadline=timezone.now() + timedelta(days=7))
 
         response = self.client.get(reverse("gameweek-current"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["number"], soon.number)
+        self.assertEqual(response.data["number"], current.number)
 
-    def test_falls_back_to_latest_gameweek_when_all_locked(self):
-        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=2))
-        Gameweek.objects.create(number=2, deadline=timezone.now() - timedelta(days=1))
+    def test_stays_current_even_after_its_own_deadline_has_passed(self):
+        # Not yet scored - the gameweek is in progress - so it should stay
+        # current rather than jumping ahead just because its own deadline
+        # has passed.
+        in_progress = Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(hours=1))
+        Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(days=7))
+
+        response = self.client.get(reverse("gameweek-current"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["number"], in_progress.number)
+
+    def test_falls_back_to_latest_gameweek_once_the_season_is_fully_scored(self):
+        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=2), is_scored=True)
+        Gameweek.objects.create(number=2, deadline=timezone.now() - timedelta(days=1), is_scored=True)
 
         response = self.client.get(reverse("gameweek-current"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["number"], 2)
+
+
+class NextPredictableGameweekNumberTests(TestCase):
+    def test_none_when_nothing_synced(self):
+        self.assertIsNone(next_predictable_gameweek_number())
+
+    def test_returns_the_current_gameweek_while_its_deadline_is_still_open(self):
+        current = Gameweek.objects.create(number=1, deadline=timezone.now() + timedelta(hours=2))
+        Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(days=7))
+
+        self.assertEqual(next_predictable_gameweek_number(), current.number)
+
+    def test_none_once_the_current_gameweeks_deadline_has_passed(self):
+        # Gameweek 1 is still current (not yet scored) but no longer
+        # predictable - gameweek 2's own deadline being open doesn't matter,
+        # only one gameweek is ever predictable at a time.
+        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(hours=1))
+        Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(days=7))
+
+        self.assertIsNone(next_predictable_gameweek_number())
+
+    def test_none_once_every_gameweek_has_been_scored(self):
+        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=2), is_scored=True)
+
+        self.assertIsNone(next_predictable_gameweek_number())
 
 
 class HomeGameweekViewTests(APITestCase):

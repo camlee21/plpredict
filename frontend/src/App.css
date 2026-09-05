@@ -456,11 +456,6 @@ button.secondary {
   flex-shrink: 0;
 }
 
-.fixture-row input[type="number"] {
-  width: 56px;
-  text-align: center;
-}
-
 .score-box {
   flex-shrink: 0;
   min-width: 76px;
@@ -486,9 +481,39 @@ button.secondary {
   box-shadow: 0 0 0 2px var(--green);
 }
 
+.score-box.editable {
+  background: white;
+  border: 2px solid var(--purple);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+}
+
+.score-box.editable input[type="number"] {
+  width: 40px;
+  padding: 4px 2px;
+  text-align: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.score-box-sep {
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .fixture-row .final-score {
   text-align: center;
   font-size: 0.85rem;
+}
+
+.saved-tag {
+  color: var(--purple);
+  font-weight: 700;
 }
 
 .fixture-row .goalscorers {

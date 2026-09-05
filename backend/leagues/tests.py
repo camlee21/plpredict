@@ -530,10 +530,10 @@ class LeagueStartingGameweekTests(APITestCase):
         response = self.client.post(reverse("league-list-create"), {"name": "Office League"})
         self.assertIsNone(response.data["starting_gameweek"])
 
-    def test_league_records_the_next_unlocked_gameweek_as_starting_gameweek(self):
+    def test_league_records_the_current_gameweek_as_starting_gameweek(self):
         team_a = Team.objects.create(external_id=1, name="Home FC")
         team_b = Team.objects.create(external_id=2, name="Away FC")
-        past_gw = Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=7))
+        past_gw = Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=7), is_scored=True)
         upcoming_gw = Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(days=7))
         for number, gw in ((1, past_gw), (2, upcoming_gw)):
             Fixture.objects.create(
@@ -548,7 +548,7 @@ class LeagueStartingGameweekTests(APITestCase):
     def test_starting_gameweek_falls_back_to_most_recent_once_season_is_over(self):
         team_a = Team.objects.create(external_id=1, name="Home FC")
         team_b = Team.objects.create(external_id=2, name="Away FC")
-        gw = Gameweek.objects.create(number=38, deadline=timezone.now() - timedelta(days=1))
+        gw = Gameweek.objects.create(number=38, deadline=timezone.now() - timedelta(days=1), is_scored=True)
         Fixture.objects.create(
             external_id=1, gameweek=gw, home_team=team_a, away_team=team_b, kickoff_time=timezone.now(),
         )

@@ -26,8 +26,8 @@ class FixtureWithPredictionSerializer(FixtureSerializer):
 
 class PredictionInputSerializer(serializers.Serializer):
     fixture_id = serializers.IntegerField()
-    home_score = serializers.IntegerField(min_value=0, max_value=20)
-    away_score = serializers.IntegerField(min_value=0, max_value=20)
+    home_score = serializers.IntegerField(min_value=0, max_value=10)
+    away_score = serializers.IntegerField(min_value=0, max_value=10)
 
 
 class BulkPredictionSerializer(serializers.Serializer):

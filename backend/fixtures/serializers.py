@@ -1,7 +1,7 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from .models import Fixture, Gameweek, Team
+from .models import Fixture, Gameweek, Team, current_gameweek_number
 
 
 class TeamSerializer(serializers.ModelSerializer):
@@ -46,7 +46,7 @@ class GameweekSerializer(serializers.ModelSerializer):
     def get_lifecycle(self, obj):
         if obj.is_scored:
             return "previous"
-        if obj.deadline is not None and timezone.now() >= obj.deadline:
+        if obj.number == current_gameweek_number():
             return "current"
         return "future"
 

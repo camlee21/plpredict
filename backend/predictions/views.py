@@ -1,19 +1,23 @@
 from django.db.models import Sum
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.fixtures.models import Gameweek
+from backend.fixtures.models import Gameweek, current_gameweek_number, next_predictable_gameweek_number
 
 from .models import Prediction
 from .serializers import BulkPredictionSerializer, FixtureWithPredictionSerializer
 
 
 class GameweekPredictionsView(APIView):
-    """Fetch or submit the current user's predictions for one gameweek."""
+    """Fetch or submit the current user's predictions for one gameweek.
+
+    Only the single next gameweek to lock (the one `next_predictable_gameweek_number`
+    returns) can be predicted for at any given time - not any gameweek whose
+    own deadline merely hasn't passed yet, and not a past one. Every other
+    gameweek is reported as locked, read-only."""
 
     permission_classes = [IsAuthenticated]
 
@@ -26,23 +30,29 @@ class GameweekPredictionsView(APIView):
         serializer = FixtureWithPredictionSerializer(
             fixtures, many=True, context={"predictions_by_fixture": predictions_by_fixture}
         )
-        is_locked = gameweek.deadline is None or timezone.now() >= gameweek.deadline
+        is_locked = number != next_predictable_gameweek_number()
+        if gameweek.is_scored:
+            lifecycle = "previous"
+        elif number == current_gameweek_number():
+            lifecycle = "current"
+        else:
+            lifecycle = "future"
         return Response(
             {
                 "gameweek": number,
                 "deadline": gameweek.deadline,
                 "is_locked": is_locked,
                 "is_scored": gameweek.is_scored,
+                "lifecycle": lifecycle,
                 "fixtures": serializer.data,
             }
         )
 
     def post(self, request, number):
         gameweek = get_object_or_404(Gameweek, number=number)
-        is_locked = gameweek.deadline is None or timezone.now() >= gameweek.deadline
-        if is_locked:
+        if number != next_predictable_gameweek_number():
             return Response(
-                {"detail": "Predictions for this gameweek have locked."},
+                {"detail": "Predictions can only be submitted for the next gameweek."},
                 status=status.HTTP_403_FORBIDDEN,
             )
 

@@ -136,6 +136,66 @@ class GameweekPredictionsViewTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_partial_submission_only_saves_the_included_fixtures(self):
+        gameweek = Gameweek.objects.create(number=1, deadline=timezone.now() + timedelta(hours=1))
+        fixture_a = Fixture.objects.create(
+            external_id=1, gameweek=gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=timezone.now() + timedelta(hours=2),
+        )
+        fixture_b = Fixture.objects.create(
+            external_id=2, gameweek=gameweek, home_team=self.away, away_team=self.home,
+            kickoff_time=timezone.now() + timedelta(hours=2),
+        )
+
+        response = self.client.post(
+            reverse("gameweek-predictions", args=[1]),
+            {"predictions": [{"fixture_id": fixture_a.id, "home_score": 2, "away_score": 1}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(Prediction.objects.filter(user=self.user, fixture=fixture_a).exists())
+        self.assertFalse(Prediction.objects.filter(user=self.user, fixture=fixture_b).exists())
+
+    def test_only_the_next_gameweek_to_lock_can_be_predicted(self):
+        # Gameweek 1 is the very next to lock; gameweek 2's own deadline
+        # hasn't passed either, but it isn't the *next* one - only one
+        # gameweek should ever be predictable at a time.
+        gameweek1, fixture1 = self._make_gameweek(timedelta(hours=1))
+        gameweek2 = Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(days=7))
+        fixture2 = Fixture.objects.create(
+            external_id=2, gameweek=gameweek2, home_team=self.home, away_team=self.away,
+            kickoff_time=timezone.now() + timedelta(days=7, hours=1),
+        )
+
+        get_gw1 = self.client.get(reverse("gameweek-predictions", args=[1]))
+        get_gw2 = self.client.get(reverse("gameweek-predictions", args=[2]))
+        self.assertFalse(get_gw1.data["is_locked"])
+        self.assertTrue(get_gw2.data["is_locked"])
+
+        response = self.client.post(
+            reverse("gameweek-predictions", args=[2]),
+            {"predictions": [{"fixture_id": fixture2.id, "home_score": 1, "away_score": 0}]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Prediction.objects.filter(fixture=fixture2).exists())
+
+    def test_a_past_gameweek_is_reported_as_locked_for_predictions(self):
+        past_gameweek = Gameweek.objects.create(
+            number=1, deadline=timezone.now() - timedelta(days=7), is_scored=True,
+        )
+        Fixture.objects.create(
+            external_id=1, gameweek=past_gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=timezone.now() - timedelta(days=7),
+            status=Fixture.Status.FINISHED, home_score=1, away_score=0,
+        )
+
+        response = self.client.get(reverse("gameweek-predictions", args=[1]))
+
+        self.assertTrue(response.data["is_locked"])
+
 
 class MyPredictionHistoryViewTests(APITestCase):
     def setUp(self):

@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
 
-const LIFECYCLE_LABELS = { previous: "Previous", current: "Current", future: "Upcoming" };
+function gameweekOptionLabel(gw) {
+  return `Gameweek ${gw.number}${gw.lifecycle === "current" ? " (current)" : ""}`;
+}
 
 export default function FixturesPage() {
   const [gameweeks, setGameweeks] = useState([]);
@@ -43,7 +45,7 @@ export default function FixturesPage() {
             <select value={selected ?? ""} onChange={(e) => setSelected(Number(e.target.value))}>
               {gameweeks.map((gw) => (
                 <option key={gw.number} value={gw.number}>
-                  Gameweek {gw.number} — {LIFECYCLE_LABELS[gw.lifecycle]}
+                  {gameweekOptionLabel(gw)}
                 </option>
               ))}
             </select>

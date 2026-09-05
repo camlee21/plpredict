@@ -1,5 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../api/client";
+import { FixtureRow } from "../components/FixtureRow";
+
+function gameweekOptionLabel(gw) {
+  return `Gameweek ${gw.number}${gw.lifecycle === "current" ? " (current)" : ""}`;
+}
+
+const LOCKED_MESSAGES = {
+  previous: "This gameweek has already been played.",
+  current: "This gameweek is in progress - predictions closed an hour before its first kickoff.",
+  future: "Predictions for this gameweek aren't open yet - the current gameweek needs to finish first.",
+};
 
 function useCountdown(deadline) {
   const [now, setNow] = useState(Date.now());
@@ -72,13 +83,24 @@ export default function PredictionsPage() {
     }));
   };
 
-  const canSubmit = useMemo(() => {
-    if (!data || data.is_locked) return false;
-    return data.fixtures.every((f) => {
-      const s = scores[f.id];
-      return s && s.home !== "" && s.away !== "" && !Number.isNaN(Number(s.home)) && !Number.isNaN(Number(s.away));
-    });
+  // Fixtures with both boxes validly filled in - the ones a save will
+  // actually submit. Anything left blank is simply skipped, so a partial
+  // draft can be saved and finished off later, right up to the deadline.
+  const completePredictions = useMemo(() => {
+    if (!data) return [];
+    return data.fixtures
+      .filter((f) => {
+        const s = scores[f.id];
+        return s && s.home !== "" && s.away !== "" && !Number.isNaN(Number(s.home)) && !Number.isNaN(Number(s.away));
+      })
+      .map((f) => ({
+        fixture_id: f.id,
+        home_score: Number(scores[f.id].home),
+        away_score: Number(scores[f.id].away),
+      }));
   }, [data, scores]);
+
+  const canSave = !data?.is_locked && completePredictions.length > 0;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -86,19 +108,16 @@ export default function PredictionsPage() {
     setMessage("");
     setSaving(true);
     try {
-      const payload = {
-        predictions: data.fixtures.map((f) => ({
-          fixture_id: f.id,
-          home_score: Number(scores[f.id].home),
-          away_score: Number(scores[f.id].away),
-        })),
-      };
       const updated = await apiRequest(`/api/predictions/gameweek/${selected}/`, {
         method: "POST",
-        body: payload,
+        body: { predictions: completePredictions },
       });
       setData(updated);
-      setMessage("Predictions saved!");
+      setMessage(
+        completePredictions.length === updated.fixtures.length
+          ? "All predictions saved!"
+          : `Saved ${completePredictions.length} of ${updated.fixtures.length} predictions. Come back any time before the deadline to fill in the rest.`
+      );
     } catch (err) {
       setError(err.message);
     } finally {
@@ -116,7 +135,7 @@ export default function PredictionsPage() {
           <select value={selected ?? ""} onChange={(e) => setSelected(Number(e.target.value))}>
             {gameweeks.map((gw) => (
               <option key={gw.number} value={gw.number}>
-                Gameweek {gw.number} {gw.is_locked ? "(locked)" : ""}
+                {gameweekOptionLabel(gw)}
               </option>
             ))}
           </select>
@@ -133,55 +152,67 @@ export default function PredictionsPage() {
         </p>
       )}
 
-      {data && (
+      {data && data.is_locked && (
+        <>
+          <p className="muted">{LOCKED_MESSAGES[data.lifecycle]}</p>
+          <div className="fixture-list">
+            {data.fixtures.map((fixture) => (
+              <FixtureRow fixture={fixture} key={fixture.id} />
+            ))}
+          </div>
+        </>
+      )}
+
+      {data && !data.is_locked && (
         <>
           <div className="deadline-banner card">
-            {data.is_locked ? (
-              <span>Predictions are locked for this gameweek.</span>
-            ) : (
-              <span>Time left to predict: <strong>{countdown}</strong></span>
-            )}
+            <span>
+              Time left to predict: <strong>{countdown}</strong>
+            </span>
           </div>
 
           <form onSubmit={handleSubmit}>
             <div className="fixture-list">
               {data.fixtures.map((fixture) => (
-                <div className="card fixture-row" key={fixture.id}>
-                  <span className="team home">{fixture.home_team.name}</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    disabled={data.is_locked}
-                    value={scores[fixture.id]?.home ?? ""}
-                    onChange={(e) => updateScore(fixture.id, "home", e.target.value)}
-                  />
-                  <span className="score-sep">-</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="20"
-                    disabled={data.is_locked}
-                    value={scores[fixture.id]?.away ?? ""}
-                    onChange={(e) => updateScore(fixture.id, "away", e.target.value)}
-                  />
-                  <span className="team away">{fixture.away_team.name}</span>
-
-                  {fixture.status === "FINISHED" && (
-                    <span className="final-score muted">
-                      Final: {fixture.home_score}-{fixture.away_score}
-                      {fixture.prediction?.points != null && ` • ${fixture.prediction.points} pt`}
-                    </span>
+                <FixtureRow
+                  key={fixture.id}
+                  fixture={fixture}
+                  renderScore={() => (
+                    <div className="score-box editable">
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        inputMode="numeric"
+                        aria-label={`${fixture.home_team.name} predicted score`}
+                        value={scores[fixture.id]?.home ?? ""}
+                        onChange={(e) => updateScore(fixture.id, "home", e.target.value)}
+                      />
+                      <span className="score-box-sep">-</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        inputMode="numeric"
+                        aria-label={`${fixture.away_team.name} predicted score`}
+                        value={scores[fixture.id]?.away ?? ""}
+                        onChange={(e) => updateScore(fixture.id, "away", e.target.value)}
+                      />
+                    </div>
                   )}
-                </div>
+                  footer={
+                    <>
+                      {new Date(fixture.kickoff_time).toLocaleString()}
+                      {fixture.prediction != null && <span className="saved-tag"> &middot; Saved</span>}
+                    </>
+                  }
+                />
               ))}
             </div>
 
-            {!data.is_locked && (
-              <button type="submit" className="primary" disabled={!canSubmit || saving}>
-                {saving ? "Saving..." : "Save predictions"}
-              </button>
-            )}
+            <button type="submit" className="primary" disabled={!canSave || saving}>
+              {saving ? "Saving..." : "Save predictions"}
+            </button>
           </form>
         </>
       )}

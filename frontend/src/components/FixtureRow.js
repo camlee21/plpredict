@@ -33,20 +33,24 @@ function TeamColumn({ team, goals, align }) {
   );
 }
 
-export function FixtureRow({ fixture }) {
+export function FixtureRow({ fixture, renderScore, footer }) {
   const isScheduled = fixture.status === "SCHEDULED";
   const isLive = fixture.status === "LIVE";
   return (
     <div className="card fixture-row">
       <div className="fixture-main">
         <TeamColumn team={fixture.home_team} goals={fixture.home_goals} align="home" />
-        <div className={`score-box ${isScheduled ? "pending" : ""} ${isLive ? "live" : ""}`}>
-          {isScheduled ? "vs" : `${fixture.home_score} - ${fixture.away_score}`}
-        </div>
+        {renderScore ? (
+          renderScore()
+        ) : (
+          <div className={`score-box ${isScheduled ? "pending" : ""} ${isLive ? "live" : ""}`}>
+            {isScheduled ? "vs" : `${fixture.home_score} - ${fixture.away_score}`}
+          </div>
+        )}
         <TeamColumn team={fixture.away_team} goals={fixture.away_goals} align="away" />
       </div>
       <div className="final-score muted">
-        {isScheduled ? new Date(fixture.kickoff_time).toLocaleString() : isLive ? "In progress" : "Full time"}
+        {footer ?? (isScheduled ? new Date(fixture.kickoff_time).toLocaleString() : isLive ? "In progress" : "Full time")}
       </div>
     </div>
   );
