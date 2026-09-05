@@ -1,12 +1,12 @@
 from django.db import transaction
-from django.db.models import Sum
+from django.db.models import Count, F, Sum
 from django.shortcuts import get_object_or_404
-from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from backend.fixtures.models import current_gameweek_number
 from backend.predictions.models import Prediction
 
 from .models import League, LeagueMembership
@@ -61,7 +61,7 @@ class LeagueListCreateView(APIView):
     def post(self, request):
         serializer = CreateLeagueSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        league = serializer.save(owner=request.user)
+        league = serializer.save(owner=request.user, starting_gameweek=current_gameweek_number())
         LeagueMembership.objects.create(league=league, user=request.user)
         return Response(LeagueSerializer(league).data, status=status.HTTP_201_CREATED)
 
@@ -69,30 +69,28 @@ class LeagueListCreateView(APIView):
 class PublicLeagueListView(APIView):
     """Browsable listing of public leagues that can be joined without a code.
 
-    Supports ?search=<name substring> and ?created_after=/?created_before=
-    (YYYY-MM-DD) to narrow the listing down.
+    Supports ?search=<name substring> and ?filter=recent|vacant (default
+    "recent") to narrow the listing down. "vacant" only shows leagues that
+    still have room to join.
     """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        leagues = League.objects.filter(is_public=True)
+        leagues = League.objects.filter(is_public=True).annotate(member_total=Count("memberships"))
 
         search = request.query_params.get("search", "").strip()
         if search:
             leagues = leagues.filter(name__icontains=search)
 
-        for param, lookup in (("created_after", "created_at__date__gte"), ("created_before", "created_at__date__lte")):
-            raw_value = request.query_params.get(param)
-            if not raw_value:
-                continue
-            parsed = parse_date(raw_value)
-            if parsed is None:
-                return Response(
-                    {"detail": f"{param} must be a date in YYYY-MM-DD format."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            leagues = leagues.filter(**{lookup: parsed})
+        filter_by = request.query_params.get("filter", "recent")
+        if filter_by == "vacant":
+            leagues = leagues.filter(member_total__lt=F("max_members"))
+        elif filter_by != "recent":
+            return Response(
+                {"detail": "filter must be 'recent' or 'vacant'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         leagues = leagues.order_by("-created_at")
         serializer = PublicLeagueSerializer(leagues, many=True, context={"request": request})

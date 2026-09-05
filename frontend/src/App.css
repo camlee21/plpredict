@@ -303,6 +303,66 @@ button.secondary {
   min-width: 160px;
 }
 
+.league-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.league-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 20px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.league-row-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.league-row-detail {
+  flex: 0 0 90px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.league-row-action {
+  flex: 0 0 auto;
+  display: inline-block;
+  background: white;
+  border: 1px solid var(--purple);
+  color: var(--purple);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+}
+
+.league-row-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+@media (max-width: 640px) {
+  .league-row {
+    flex-wrap: wrap;
+  }
+  .league-row-name {
+    flex-basis: 100%;
+    white-space: normal;
+  }
+}
+
 .standings-table {
   width: 100%;
   border-collapse: collapse;

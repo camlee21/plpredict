@@ -53,10 +53,19 @@ class ServiceHelperTests(TestCase):
         self.assertEqual(map_status({"finished": True, "started": True}), "FINISHED")
 
     def test_map_status_live(self):
-        self.assertEqual(map_status({"finished": False, "started": True}), "LIVE")
+        self.assertEqual(map_status({"finished": False, "finished_provisional": False, "started": True}), "LIVE")
 
     def test_map_status_scheduled(self):
-        self.assertEqual(map_status({"finished": False, "started": False}), "SCHEDULED")
+        self.assertEqual(map_status({"finished": False, "finished_provisional": False, "started": False}), "SCHEDULED")
+
+    def test_map_status_finished_provisional_counts_as_finished(self):
+        # `finished` lags the final whistle until bonus points are locked in;
+        # `finished_provisional` flips at full time, which is what a viewer
+        # checking the score means by "finished" - not whether bonus points
+        # have been confirmed yet.
+        self.assertEqual(
+            map_status({"finished": False, "finished_provisional": True, "started": True}), "FINISHED"
+        )
 
 
 class TeamFormTests(TestCase):

@@ -69,8 +69,11 @@ export default function LeaguePage() {
       <h1>{league.name}</h1>
       <p className="muted">
         {league.is_public ? "Public league" : "Private league"} &middot; {league.member_count}/
-        {league.max_members} members
+        {league.max_members} members &middot; Created by {league.owner_username}
       </p>
+      {league.starting_gameweek && (
+        <p className="muted">Created during Gameweek {league.starting_gameweek}.</p>
+      )}
 
       {!league.is_public && (
         <div className="league-code-banner card">

@@ -17,8 +17,7 @@ export default function LeaguesPage() {
   const [joiningId, setJoiningId] = useState(null);
 
   const [search, setSearch] = useState("");
-  const [createdAfter, setCreatedAfter] = useState("");
-  const [createdBefore, setCreatedBefore] = useState("");
+  const [browseFilter, setBrowseFilter] = useState("recent");
 
   const loadMyLeagues = useCallback(async () => {
     try {
@@ -31,8 +30,7 @@ export default function LeaguesPage() {
   const loadPublicLeagues = useCallback(async () => {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
-    if (createdAfter) params.set("created_after", createdAfter);
-    if (createdBefore) params.set("created_before", createdBefore);
+    params.set("filter", browseFilter);
     const query = params.toString();
 
     try {
@@ -40,7 +38,7 @@ export default function LeaguesPage() {
     } catch (err) {
       setError(err.message);
     }
-  }, [search, createdAfter, createdBefore]);
+  }, [search, browseFilter]);
 
   useEffect(() => {
     loadMyLeagues();
@@ -183,12 +181,11 @@ export default function LeaguesPage() {
           />
         </label>
         <label>
-          Created after
-          <input type="date" value={createdAfter} onChange={(e) => setCreatedAfter(e.target.value)} />
-        </label>
-        <label>
-          Created before
-          <input type="date" value={createdBefore} onChange={(e) => setCreatedBefore(e.target.value)} />
+          Filter by
+          <select value={browseFilter} onChange={(e) => setBrowseFilter(e.target.value)}>
+            <option value="recent">Recent</option>
+            <option value="vacant">Vacant (room to join)</option>
+          </select>
         </label>
       </div>
 
@@ -196,28 +193,34 @@ export default function LeaguesPage() {
       {publicLeagues && publicLeagues.length === 0 && (
         <p className="muted">No public leagues match your filters.</p>
       )}
-      <div className="league-grid">
-        {publicLeagues?.map((league) => (
-          <div className="card league-card" key={league.public_id}>
-            <h3>{league.name}</h3>
-            <p className="muted">By {league.owner_username}</p>
-            <p className="muted">
-              {league.member_count}/{league.max_members} members
-            </p>
-            {league.is_member ? (
-              <Link to={`/leagues/${league.public_id}`}>View league</Link>
-            ) : (
-              <button
-                className="secondary"
-                disabled={league.is_full || joiningId === league.public_id}
-                onClick={() => handleJoinPublic(league.public_id)}
-              >
-                {league.is_full ? "Full" : joiningId === league.public_id ? "Joining..." : "Join"}
-              </button>
-            )}
-          </div>
-        ))}
-      </div>
+      {publicLeagues && publicLeagues.length > 0 && (
+        <div className="league-row-list">
+          {publicLeagues.map((league) => (
+            <div className="league-row" key={league.public_id}>
+              <span className="league-row-name">{league.name}</span>
+              <span className="league-row-detail muted">
+                {league.member_count}/{league.max_members}
+              </span>
+              <span className="league-row-detail muted">
+                {league.starting_gameweek ? `GW${league.starting_gameweek}` : "—"}
+              </span>
+              {league.is_member ? (
+                <Link to={`/leagues/${league.public_id}`} className="league-row-action">
+                  View league
+                </Link>
+              ) : (
+                <button
+                  className="league-row-action"
+                  disabled={league.is_full || joiningId === league.public_id}
+                  onClick={() => handleJoinPublic(league.public_id)}
+                >
+                  {league.is_full ? "Full" : joiningId === league.public_id ? "Joining..." : "Join"}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

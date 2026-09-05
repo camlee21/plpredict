@@ -42,6 +42,10 @@ class League(models.Model):
     max_members = models.PositiveSmallIntegerField(choices=MAX_MEMBERS_CHOICES, default=DEFAULT_MAX_MEMBERS)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="owned_leagues", on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
+    # The gameweek that was current/next-up when this league was created, so
+    # members have context for what its point totals cover. Null only if no
+    # gameweeks had been synced yet at creation time.
+    starting_gameweek = models.PositiveSmallIntegerField(null=True, blank=True)
     members = models.ManyToManyField(
         settings.AUTH_USER_MODEL, through="LeagueMembership", related_name="leagues"
     )

@@ -42,7 +42,11 @@ def parse_kickoff(raw_utc_date):
 
 
 def map_status(raw_fixture):
-    if raw_fixture.get("finished"):
+    # `finished` only flips once bonus points are confirmed, which can lag
+    # the final whistle by an hour or more. `finished_provisional` flips as
+    # soon as full time is reached, which is what "Finished" should mean to
+    # a user checking the score - not whether bonus points are locked in yet.
+    if raw_fixture.get("finished") or raw_fixture.get("finished_provisional"):
         return "FINISHED"
     if raw_fixture.get("started"):
         return "LIVE"

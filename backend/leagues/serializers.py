@@ -16,7 +16,7 @@ class LeagueSerializer(serializers.ModelSerializer):
         model = League
         fields = (
             "public_id", "name", "code", "is_public", "max_members",
-            "owner_username", "member_count", "is_full", "created_at",
+            "owner_username", "member_count", "is_full", "created_at", "starting_gameweek",
         )
         read_only_fields = fields
 
@@ -25,9 +25,9 @@ class LeagueSerializer(serializers.ModelSerializer):
 
 
 class PublicLeagueSerializer(serializers.ModelSerializer):
-    """Browse listing for public leagues - never exposes the join code."""
+    """Browse listing for public leagues - never exposes the join code or
+    who created it (that's only revealed once you've opened the league)."""
 
-    owner_username = serializers.CharField(source="owner.username", read_only=True)
     member_count = serializers.IntegerField(source="memberships.count", read_only=True)
     is_full = serializers.SerializerMethodField()
     is_member = serializers.SerializerMethodField()
@@ -35,8 +35,8 @@ class PublicLeagueSerializer(serializers.ModelSerializer):
     class Meta:
         model = League
         fields = (
-            "public_id", "name", "max_members", "owner_username",
-            "member_count", "is_full", "is_member", "created_at",
+            "public_id", "name", "max_members",
+            "member_count", "is_full", "is_member", "created_at", "starting_gameweek",
         )
 
     def get_is_full(self, obj):

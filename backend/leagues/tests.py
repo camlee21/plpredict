@@ -459,11 +459,14 @@ class LeagueNameValidationTests(APITestCase):
 class PublicLeagueSearchAndFilterTests(APITestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.other = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
         self.client.force_authenticate(user=self.owner)
 
         self.office_league = League.objects.create(name="Office Sweepstake", owner=self.owner, is_public=True)
         LeagueMembership.objects.create(league=self.office_league, user=self.owner)
-        self.friends_league = League.objects.create(name="Friends & Family", owner=self.owner, is_public=True)
+        self.friends_league = League.objects.create(
+            name="Friends & Family", owner=self.owner, is_public=True, max_members=4
+        )
         LeagueMembership.objects.create(league=self.friends_league, user=self.owner)
 
         old_date = timezone.now() - timedelta(days=30)
@@ -480,31 +483,85 @@ class PublicLeagueSearchAndFilterTests(APITestCase):
         response = self.client.get(reverse("league-browse"), {"search": "nonexistent"})
         self.assertEqual(response.data, [])
 
-    def test_filter_by_created_after(self):
-        cutoff = (timezone.now() - timedelta(days=1)).date().isoformat()
-        response = self.client.get(reverse("league-browse"), {"created_after": cutoff})
+    def test_default_filter_is_recent_and_orders_newest_first(self):
+        response = self.client.get(reverse("league-browse"))
 
         names = [row["name"] for row in response.data]
-        self.assertIn("Friends & Family", names)
-        self.assertNotIn("Office Sweepstake", names)
+        self.assertEqual(names, ["Friends & Family", "Office Sweepstake"])
 
-    def test_filter_by_created_before(self):
-        cutoff = (timezone.now() - timedelta(days=1)).date().isoformat()
-        response = self.client.get(reverse("league-browse"), {"created_before": cutoff})
+    def test_filter_vacant_excludes_full_leagues(self):
+        for n in range(3):
+            member = User.objects.create_user(username=f"filler{n}", email=f"filler{n}@example.com", password="pw12345678")
+            LeagueMembership.objects.create(league=self.friends_league, user=member)
+        self.assertEqual(self.friends_league.memberships.count(), self.friends_league.max_members)
+
+        response = self.client.get(reverse("league-browse"), {"filter": "vacant"})
 
         names = [row["name"] for row in response.data]
         self.assertIn("Office Sweepstake", names)
         self.assertNotIn("Friends & Family", names)
 
-    def test_combining_search_and_date_filters(self):
-        cutoff = (timezone.now() - timedelta(days=1)).date().isoformat()
-        response = self.client.get(
-            reverse("league-browse"), {"search": "office", "created_before": cutoff}
-        )
+    def test_combining_search_and_vacant_filter(self):
+        response = self.client.get(reverse("league-browse"), {"search": "office", "filter": "vacant"})
 
         names = [row["name"] for row in response.data]
         self.assertEqual(names, ["Office Sweepstake"])
 
-    def test_invalid_date_format_returns_400(self):
-        response = self.client.get(reverse("league-browse"), {"created_after": "not-a-date"})
+    def test_invalid_filter_value_returns_400(self):
+        response = self.client.get(reverse("league-browse"), {"filter": "not-a-real-filter"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_browse_listing_never_exposes_who_created_the_league(self):
+        response = self.client.get(reverse("league-browse"))
+        for row in response.data:
+            self.assertNotIn("owner_username", row)
+
+    def test_league_detail_does_expose_who_created_the_league(self):
+        response = self.client.get(reverse("league-detail", args=[self.office_league.public_id]))
+        self.assertEqual(response.data["owner_username"], "alice")
+
+
+class LeagueStartingGameweekTests(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.client.force_authenticate(user=self.owner)
+
+    def test_league_created_with_no_gameweeks_synced_has_no_starting_gameweek(self):
+        response = self.client.post(reverse("league-list-create"), {"name": "Office League"})
+        self.assertIsNone(response.data["starting_gameweek"])
+
+    def test_league_records_the_next_unlocked_gameweek_as_starting_gameweek(self):
+        team_a = Team.objects.create(external_id=1, name="Home FC")
+        team_b = Team.objects.create(external_id=2, name="Away FC")
+        past_gw = Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=7))
+        upcoming_gw = Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(days=7))
+        for number, gw in ((1, past_gw), (2, upcoming_gw)):
+            Fixture.objects.create(
+                external_id=number, gameweek=gw, home_team=team_a, away_team=team_b,
+                kickoff_time=timezone.now(),
+            )
+
+        response = self.client.post(reverse("league-list-create"), {"name": "Office League"})
+
+        self.assertEqual(response.data["starting_gameweek"], 2)
+
+    def test_starting_gameweek_falls_back_to_most_recent_once_season_is_over(self):
+        team_a = Team.objects.create(external_id=1, name="Home FC")
+        team_b = Team.objects.create(external_id=2, name="Away FC")
+        gw = Gameweek.objects.create(number=38, deadline=timezone.now() - timedelta(days=1))
+        Fixture.objects.create(
+            external_id=1, gameweek=gw, home_team=team_a, away_team=team_b, kickoff_time=timezone.now(),
+        )
+
+        response = self.client.post(reverse("league-list-create"), {"name": "Office League"})
+
+        self.assertEqual(response.data["starting_gameweek"], 38)
+
+    def test_browse_listing_includes_starting_gameweek(self):
+        gw = Gameweek.objects.create(number=5, deadline=timezone.now() + timedelta(days=1))
+        League.objects.create(name="Public League", owner=self.owner, is_public=True, starting_gameweek=gw.number)
+
+        response = self.client.get(reverse("league-browse"))
+
+        row = next(r for r in response.data if r["name"] == "Public League")
+        self.assertEqual(row["starting_gameweek"], 5)

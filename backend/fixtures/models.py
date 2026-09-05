@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 
 FORM_LENGTH = 5
 
@@ -75,6 +76,18 @@ class Gameweek(models.Model):
         self.deadline = min(kickoffs) - lock_before
         self.finalize_after = max(kickoffs) + finalize_buffer
         self.save(update_fields=["deadline", "finalize_after"])
+
+
+def current_gameweek_number():
+    """The gameweek number to treat as "now": the next one that hasn't
+    locked yet, or the most recent one once the season is over. Returns
+    None if no gameweeks have been synced yet."""
+    now = timezone.now()
+    gameweek = (
+        Gameweek.objects.filter(deadline__gt=now).order_by("deadline").first()
+        or Gameweek.objects.order_by("-number").first()
+    )
+    return gameweek.number if gameweek else None
 
 
 class Fixture(models.Model):

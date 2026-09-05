@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Gameweek
+from .models import Gameweek, current_gameweek_number
 from .serializers import GameweekDetailSerializer, GameweekSerializer
 
 
@@ -29,14 +29,10 @@ class CurrentGameweekView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        now = timezone.now()
-        gameweek = (
-            Gameweek.objects.filter(deadline__gt=now).order_by("deadline").first()
-            or Gameweek.objects.order_by("-number").first()
-        )
-        if gameweek is None:
+        number = current_gameweek_number()
+        if number is None:
             return Response({"detail": "No gameweeks have been synced yet."}, status=404)
-        return Response(GameweekSerializer(gameweek).data)
+        return Response(GameweekSerializer(Gameweek.objects.get(number=number)).data)
 
 
 class HomeGameweekView(APIView):
