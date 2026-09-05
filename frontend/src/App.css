@@ -1,38 +1,342 @@
-.App {
+:root {
+  --purple: #37003c;
+  --green: #00ff87;
+  --pink: #e90052;
+  --bg: #f4f2f7;
+  --text: #221733;
+  --muted: #6b6577;
+  --border: #e1dbe8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.navbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--purple);
+  color: white;
+  padding: 14px 28px;
+}
+
+.navbar .brand {
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: var(--green);
+  text-decoration: none;
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.nav-links a {
+  color: white;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.nav-links a:hover {
+  color: var(--green);
+}
+
+.nav-user {
+  color: var(--green);
+  font-weight: 600;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: white;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 32px 20px 80px;
+}
+
+.page-loading {
+  text-align: center;
+  padding: 80px 0;
+  color: var(--muted);
+}
+
+h1 {
+  margin-top: 0;
+}
+
+.card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.auth-page {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 90vh;
+  padding: 20px;
+}
+
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+input,
+select {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--text);
+}
+
+input:focus,
+select:focus {
+  outline: 2px solid var(--purple);
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+button.primary {
+  background: var(--purple);
+  color: white;
+  border: none;
+  padding: 12px 18px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #4a0052;
+}
+
+button.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button.secondary {
+  background: white;
+  border: 1px solid var(--purple);
+  color: var(--purple);
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.divider {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  position: relative;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.85rem;
+}
+
+.error-banner {
+  background: #fdeaea;
+  color: #a5192b;
+  border: 1px solid #f4c2c8;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.success-banner {
+  background: #e6fbf1;
+  color: #067a48;
+  border: 1px solid #b7ecd3;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+}
+
+.league-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.league-actions form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.league-actions h2 {
+  margin-top: 0;
+  font-size: 1.1rem;
+}
+
+.league-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.league-card {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  transition: transform 0.1s ease;
+}
+
+.league-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--purple);
+}
+
+.league-card h3 {
+  margin: 0 0 8px;
+}
+
+.back-link {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.league-code-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 24px;
+}
+
+.standings-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.standings-table th,
+.standings-table td {
+  text-align: left;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.standings-table th {
+  background: var(--purple);
+  color: white;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+
+.standings-table tr:last-child td {
+  border-bottom: none;
+}
+
+.gameweek-selector {
+  margin-bottom: 16px;
+}
+
+.gameweek-selector select {
+  min-width: 220px;
+}
+
+.deadline-banner {
+  margin-bottom: 20px;
+  font-size: 1rem;
+}
+
+.fixture-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.fixture-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+}
+
+.fixture-row .team {
+  flex: 1;
+  font-weight: 600;
+}
+
+.fixture-row .team.home {
+  text-align: right;
+}
+
+.fixture-row input[type="number"] {
+  width: 56px;
   text-align: center;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+.fixture-row .score-sep {
+  color: var(--muted);
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
+.fixture-row .final-score {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 0.85rem;
+  margin-top: 6px;
+}
+
+@media (max-width: 640px) {
+  .league-actions {
+    grid-template-columns: 1fr;
   }
-}
-
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(10px + 2vmin);
-  color: white;
-}
-
-.App-link {
-  color: #61dafb;
-}
-
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
+  .fixture-row {
+    flex-wrap: wrap;
+    justify-content: center;
   }
-  to {
-    transform: rotate(360deg);
+  .fixture-row .team {
+    flex-basis: 40%;
+    text-align: center;
   }
 }

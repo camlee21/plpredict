@@ -1,0 +1,9 @@
+from django.urls import path
+
+from .views import CurrentGameweekView, GameweekDetailView, GameweekListView
+
+urlpatterns = [
+    path("gameweeks/", GameweekListView.as_view(), name="gameweek-list"),
+    path("gameweeks/current/", CurrentGameweekView.as_view(), name="gameweek-current"),
+    path("gameweeks/<int:number>/", GameweekDetailView.as_view(), name="gameweek-detail"),
+]

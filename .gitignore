@@ -23,3 +23,10 @@ yarn-debug.log*
 yarn-error.log*
 
 venv
+venv/
+frontend/node_modules/
+frontend/build/
+*.pyc
+__pycache__/
+.env
+db.sqlite3
