@@ -92,7 +92,8 @@ export default function LeaguePage() {
           <tr>
             <th>#</th>
             <th>Player</th>
-            <th>Points</th>
+            <th>{league.current_gameweek ? `GW${league.current_gameweek}` : "Current GW"}</th>
+            <th>Total</th>
           </tr>
         </thead>
         <tbody>
@@ -100,6 +101,7 @@ export default function LeaguePage() {
             <tr key={row.user_id}>
               <td>{row.rank_display}</td>
               <td>{row.username}</td>
+              <td>{row.current_gameweek_points}</td>
               <td>{row.total_points}</td>
             </tr>
           ))}

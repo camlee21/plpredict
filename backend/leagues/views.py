@@ -6,8 +6,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.fixtures.models import current_gameweek_number
+from backend.fixtures.models import Fixture, current_gameweek_number
 from backend.predictions.models import Prediction
+from backend.predictions.scoring import calculate_points
 
 from .models import League, LeagueMembership
 from .serializers import CreateLeagueSerializer, JoinLeagueSerializer, LeagueSerializer, PublicLeagueSerializer
@@ -36,6 +37,33 @@ def _ordinal(n):
     else:
         suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
     return f"{n}{suffix}"
+
+
+def _current_gameweek_points(member_ids, gameweek_number):
+    """Live points each member has scored so far in the current gameweek's
+    finished fixtures. This is provisional: it isn't backed by Prediction.points
+    (which stays null until the whole gameweek is officially scored, see
+    score_gameweeks), and it resets to 0 once that happens and the gameweek's
+    points fold into total_points instead."""
+    if gameweek_number is None:
+        return {}
+    predictions = Prediction.objects.filter(
+        user_id__in=member_ids,
+        fixture__gameweek__number=gameweek_number,
+        fixture__status=Fixture.Status.FINISHED,
+        fixture__home_score__isnull=False,
+        fixture__away_score__isnull=False,
+    ).select_related("fixture")
+
+    points = {}
+    for prediction in predictions:
+        fixture = prediction.fixture
+        earned = calculate_points(
+            prediction.predicted_home_score, prediction.predicted_away_score,
+            fixture.home_score, fixture.away_score,
+        )
+        points[prediction.user_id] = points.get(prediction.user_id, 0) + earned
+    return points
 
 
 def _join_league(user, league):
@@ -139,6 +167,8 @@ class LeagueDetailView(APIView):
             .values("user__id")
             .annotate(total=Sum("points"))
         }
+        current_gameweek = current_gameweek_number()
+        current_points = _current_gameweek_points(member_ids, current_gameweek)
 
         standings = []
         for membership in league.memberships.select_related("user"):
@@ -147,6 +177,7 @@ class LeagueDetailView(APIView):
                     "user_id": membership.user_id,
                     "username": membership.user.username,
                     "total_points": totals.get(membership.user_id, 0),
+                    "current_gameweek_points": current_points.get(membership.user_id, 0),
                 }
             )
         standings = _rank_by_points(standings)
@@ -155,6 +186,7 @@ class LeagueDetailView(APIView):
             {
                 **LeagueSerializer(league).data,
                 "is_owner": league.owner_id == request.user.id,
+                "current_gameweek": current_gameweek,
                 "standings": standings,
             }
         )

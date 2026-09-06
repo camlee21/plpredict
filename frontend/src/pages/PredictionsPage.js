@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
+import { formatDateTime } from "../utils/format";
 
 function gameweekOptionLabel(gw) {
   return `Gameweek ${gw.number}${gw.lifecycle === "current" ? " (current)" : ""}`;
@@ -203,7 +204,7 @@ export default function PredictionsPage() {
                   )}
                   footer={
                     <>
-                      {new Date(fixture.kickoff_time).toLocaleString()}
+                      {formatDateTime(fixture.kickoff_time)}
                       {fixture.prediction != null && <span className="saved-tag"> &middot; Saved</span>}
                     </>
                   }

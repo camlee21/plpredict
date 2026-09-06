@@ -337,6 +337,69 @@ class LeagueStandingsTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
+class LeagueCurrentGameweekPointsTests(APITestCase):
+    """A gameweek's points only join total_points once it's officially
+    scored; until then they show up as a separate, live current_gameweek_points
+    figure computed from whichever of its fixtures have already finished."""
+
+    def setUp(self):
+        self.alice = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.bob = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        self.league = League.objects.create(name="Office League", owner=self.alice)
+        LeagueMembership.objects.create(league=self.league, user=self.alice)
+        LeagueMembership.objects.create(league=self.league, user=self.bob)
+        self.home = Team.objects.create(external_id=1, name="Home FC")
+        self.away = Team.objects.create(external_id=2, name="Away FC")
+
+    def test_live_points_from_a_finished_fixture_in_the_current_unscored_gameweek(self):
+        gameweek = Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(hours=1))
+        finished = Fixture.objects.create(
+            external_id=1, gameweek=gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=timezone.now() - timedelta(hours=2),
+            status=Fixture.Status.FINISHED, home_score=2, away_score=1,
+        )
+        unfinished = Fixture.objects.create(
+            external_id=2, gameweek=gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=timezone.now() + timedelta(hours=1),
+        )
+        Prediction.objects.create(user=self.alice, fixture=finished, predicted_home_score=2, predicted_away_score=1)
+        Prediction.objects.create(user=self.alice, fixture=unfinished, predicted_home_score=1, predicted_away_score=0)
+        Prediction.objects.create(user=self.bob, fixture=finished, predicted_home_score=0, predicted_away_score=0)
+
+        self.client.force_authenticate(user=self.alice)
+        response = self.client.get(reverse("league-detail", args=[self.league.public_id]))
+
+        self.assertEqual(response.data["current_gameweek"], 1)
+        by_username = {row["username"]: row for row in response.data["standings"]}
+        self.assertEqual(by_username["alice"]["current_gameweek_points"], 3)
+        self.assertEqual(by_username["alice"]["total_points"], 0)
+        self.assertEqual(by_username["bob"]["current_gameweek_points"], 0)
+
+    def test_resets_to_zero_and_folds_into_total_once_the_gameweek_is_scored(self):
+        gameweek = Gameweek.objects.create(number=1, is_scored=True)
+        fixture = Fixture.objects.create(
+            external_id=1, gameweek=gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=timezone.now() - timedelta(days=1),
+            status=Fixture.Status.FINISHED, home_score=2, away_score=1,
+        )
+        Prediction.objects.create(
+            user=self.alice, fixture=fixture, predicted_home_score=2, predicted_away_score=1, points=3
+        )
+        next_gameweek = Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(days=7))
+        Fixture.objects.create(
+            external_id=2, gameweek=next_gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=timezone.now() + timedelta(days=7),
+        )
+
+        self.client.force_authenticate(user=self.alice)
+        response = self.client.get(reverse("league-detail", args=[self.league.public_id]))
+
+        self.assertEqual(response.data["current_gameweek"], 2)
+        alice = next(row for row in response.data["standings"] if row["username"] == "alice")
+        self.assertEqual(alice["total_points"], 3)
+        self.assertEqual(alice["current_gameweek_points"], 0)
+
+
 class LeagueStandingsTiedRankingTests(APITestCase):
     """u1=20, u2=18, u3=17, u4=17, u5=15 -> 1st, 2nd, =3rd, =3rd, 5th."""
 

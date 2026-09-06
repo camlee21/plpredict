@@ -1,3 +1,5 @@
+import { formatDateTime } from "../utils/format";
+
 export function FormBadges({ form }) {
   if (!form || form.length === 0) {
     return <span className="muted small form-badges">No form yet</span>;
@@ -52,7 +54,7 @@ export function FixtureRow({ fixture, renderScore, footer }) {
         <TeamColumn team={fixture.away_team} goals={fixture.away_goals} align="away" />
       </div>
       <div className="final-score muted">
-        {footer ?? (isScheduled ? new Date(fixture.kickoff_time).toLocaleString() : isLive ? "In progress" : "Full time")}
+        {footer ?? (isScheduled ? formatDateTime(fixture.kickoff_time) : isLive ? "In progress" : "Full time")}
       </div>
     </div>
   );
