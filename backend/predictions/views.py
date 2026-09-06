@@ -60,23 +60,32 @@ class GameweekPredictionsView(APIView):
         serializer.is_valid(raise_exception=True)
 
         valid_fixture_ids = set(gameweek.matches.values_list("id", flat=True))
-        saved = []
-        for item in serializer.validated_data["predictions"]:
-            fixture_id = item["fixture_id"]
-            if fixture_id not in valid_fixture_ids:
-                return Response(
-                    {"detail": f"Fixture {fixture_id} is not part of gameweek {number}."},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-            prediction, _ = Prediction.objects.update_or_create(
+        submitted = serializer.validated_data["predictions"]
+        submitted_fixture_ids = {item["fixture_id"] for item in submitted}
+
+        invalid_fixture_ids = submitted_fixture_ids - valid_fixture_ids
+        if invalid_fixture_ids:
+            return Response(
+                {"detail": f"Fixture {next(iter(invalid_fixture_ids))} is not part of gameweek {number}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        missing_fixture_ids = valid_fixture_ids - submitted_fixture_ids
+        if missing_fixture_ids:
+            return Response(
+                {"detail": "A prediction is required for every fixture in this gameweek before saving."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        for item in submitted:
+            Prediction.objects.update_or_create(
                 user=request.user,
-                fixture_id=fixture_id,
+                fixture_id=item["fixture_id"],
                 defaults={
                     "predicted_home_score": item["home_score"],
                     "predicted_away_score": item["away_score"],
                 },
             )
-            saved.append(prediction)
 
         return self.get(request, number)
 

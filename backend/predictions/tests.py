@@ -136,7 +136,7 @@ class GameweekPredictionsViewTests(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_partial_submission_only_saves_the_included_fixtures(self):
+    def test_partial_submission_is_rejected(self):
         gameweek = Gameweek.objects.create(number=1, deadline=timezone.now() + timedelta(hours=1))
         fixture_a = Fixture.objects.create(
             external_id=1, gameweek=gameweek, home_team=self.home, away_team=self.away,
@@ -153,9 +153,35 @@ class GameweekPredictionsViewTests(APITestCase):
             format="json",
         )
 
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Prediction.objects.filter(user=self.user, fixture=fixture_a).exists())
+        self.assertFalse(Prediction.objects.filter(user=self.user, fixture=fixture_b).exists())
+
+    def test_can_submit_once_every_fixture_has_a_prediction(self):
+        gameweek = Gameweek.objects.create(number=1, deadline=timezone.now() + timedelta(hours=1))
+        fixture_a = Fixture.objects.create(
+            external_id=1, gameweek=gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=timezone.now() + timedelta(hours=2),
+        )
+        fixture_b = Fixture.objects.create(
+            external_id=2, gameweek=gameweek, home_team=self.away, away_team=self.home,
+            kickoff_time=timezone.now() + timedelta(hours=2),
+        )
+
+        response = self.client.post(
+            reverse("gameweek-predictions", args=[1]),
+            {
+                "predictions": [
+                    {"fixture_id": fixture_a.id, "home_score": 2, "away_score": 1},
+                    {"fixture_id": fixture_b.id, "home_score": 0, "away_score": 0},
+                ]
+            },
+            format="json",
+        )
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(Prediction.objects.filter(user=self.user, fixture=fixture_a).exists())
-        self.assertFalse(Prediction.objects.filter(user=self.user, fixture=fixture_b).exists())
+        self.assertTrue(Prediction.objects.filter(user=self.user, fixture=fixture_b).exists())
 
     def test_only_the_next_gameweek_to_lock_can_be_predicted(self):
         # Gameweek 1 is the very next to lock; gameweek 2's own deadline

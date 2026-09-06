@@ -202,7 +202,7 @@ export default function LeaguesPage() {
                 {league.member_count}/{league.max_members}
               </span>
               <span className="league-row-detail muted">
-                {league.starting_gameweek ? `GW${league.starting_gameweek}` : "—"}
+                {league.starting_gameweek ? `GW${league.starting_gameweek}` : "-"}
               </span>
               {league.is_member ? (
                 <Link to={`/leagues/${league.public_id}`} className="league-row-action">

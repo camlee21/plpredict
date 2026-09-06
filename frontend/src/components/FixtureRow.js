@@ -21,11 +21,13 @@ function formatGoals(goals) {
 }
 
 function TeamColumn({ team, goals, align }) {
+  const badge = team.crest_url && <img src={team.crest_url} alt="" className="team-badge" />;
   return (
     <div className={`team-col ${align}`}>
       <div className="team-name-row">
-        {team.crest_url && <img src={team.crest_url} alt="" className="team-badge" />}
+        {align === "away" && badge}
         <span className="team-name">{team.name}</span>
+        {align === "home" && badge}
       </div>
       <FormBadges form={team.form} />
       {goals && goals.length > 0 && <div className="goalscorers">{formatGoals(goals)}</div>}

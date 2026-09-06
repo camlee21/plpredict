@@ -4,6 +4,7 @@ import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
 import FixturesPage from "./pages/FixturesPage";
+import GameweekScorePage from "./pages/GameweekScorePage";
 import HomePage from "./pages/HomePage";
 import LeaguePage from "./pages/LeaguePage";
 import LeaguesPage from "./pages/LeaguesPage";
@@ -53,6 +54,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <PredictionsPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/scores/:number"
+            element={
+              <ProtectedRoute>
+                <GameweekScorePage />
               </ProtectedRoute>
             }
           />

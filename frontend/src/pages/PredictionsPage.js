@@ -83,9 +83,9 @@ export default function PredictionsPage() {
     }));
   };
 
-  // Fixtures with both boxes validly filled in - the ones a save will
-  // actually submit. Anything left blank is simply skipped, so a partial
-  // draft can be saved and finished off later, right up to the deadline.
+  // Fixtures with both boxes validly filled in. A save must cover every
+  // fixture in the gameweek - a partial draft can no longer be submitted -
+  // so this also drives how many are still missing a score.
   const completePredictions = useMemo(() => {
     if (!data) return [];
     return data.fixtures
@@ -100,12 +100,17 @@ export default function PredictionsPage() {
       }));
   }, [data, scores]);
 
-  const canSave = !data?.is_locked && completePredictions.length > 0;
+  const missingCount = data ? data.fixtures.length - completePredictions.length : 0;
+  const canSave = !data?.is_locked && missingCount === 0;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setMessage("");
+    if (missingCount > 0) {
+      setError(`Enter a score for every fixture before saving - ${missingCount} still need one.`);
+      return;
+    }
     setSaving(true);
     try {
       const updated = await apiRequest(`/api/predictions/gameweek/${selected}/`, {
@@ -113,11 +118,7 @@ export default function PredictionsPage() {
         body: { predictions: completePredictions },
       });
       setData(updated);
-      setMessage(
-        completePredictions.length === updated.fixtures.length
-          ? "All predictions saved!"
-          : `Saved ${completePredictions.length} of ${updated.fixtures.length} predictions. Come back any time before the deadline to fill in the rest.`
-      );
+      setMessage("All predictions saved!");
     } catch (err) {
       setError(err.message);
     } finally {
@@ -213,6 +214,11 @@ export default function PredictionsPage() {
             <button type="submit" className="primary" disabled={!canSave || saving}>
               {saving ? "Saving..." : "Save predictions"}
             </button>
+            {missingCount > 0 && (
+              <p className="muted">
+                Enter a score for every fixture to save - {missingCount} more still needed.
+              </p>
+            )}
           </form>
         </>
       )}
