@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth import authenticate, get_user_model
 from django.conf import settings
 from google.auth.transport import requests as google_requests
@@ -8,7 +10,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .serializers import GoogleAuthSerializer, LoginSerializer, RegisterSerializer, UserSerializer
+from .serializers import (
+    ChangePasswordSerializer,
+    GoogleAuthSerializer,
+    LoginSerializer,
+    ProfileUpdateSerializer,
+    RegisterSerializer,
+    UserSerializer,
+)
+from .validators import USERNAME_MAX_LENGTH
 
 User = get_user_model()
 
@@ -103,12 +113,21 @@ class GoogleAuthView(APIView):
 
 
 def _unique_username_from_email(email):
-    base = email.split("@")[0][:150] or "user"
+    """The default username for a Google sign-in: the part of the email
+    before "@", stripped down to our username character set and cut to
+    USERNAME_MAX_LENGTH - e.g. "mike2@gmail.com" -> "mike2"."""
+    local_part = email.split("@")[0]
+    sanitized = re.sub(r"[^A-Za-z0-9.]", "", local_part)
+    sanitized = re.sub(r"\.{2,}", ".", sanitized).strip(".")
+    base = sanitized[:USERNAME_MAX_LENGTH].strip(".") or "user"
+
     username = base
     suffix = 1
     while User.objects.filter(username__iexact=username).exists():
         suffix += 1
-        username = f"{base}{suffix}"[:150]
+        suffix_str = str(suffix)
+        trimmed = base[: USERNAME_MAX_LENGTH - len(suffix_str)].rstrip(".") or "user"
+        username = f"{trimmed}{suffix_str}"
     return username
 
 
@@ -117,3 +136,24 @@ class MeView(APIView):
 
     def get(self, request):
         return Response(UserSerializer(request.user).data)
+
+    def patch(self, request):
+        serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(UserSerializer(request.user).data)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not request.user.has_usable_password():
+            return Response(
+                {"detail": "Your account signs in via Google and has no password to change."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = ChangePasswordSerializer(instance=request.user, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Password updated."})

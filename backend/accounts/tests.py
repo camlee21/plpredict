@@ -166,3 +166,129 @@ class GoogleAuthTests(APITestCase):
         response = self.client.post(reverse("google-auth"), {"id_token": "garbage"})
 
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class GoogleUsernameGenerationTests(APITestCase):
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    @patch("backend.accounts.views.google_id_token.verify_oauth2_token")
+    def test_username_defaults_to_the_part_of_the_email_before_the_at_sign(self, mock_verify):
+        mock_verify.return_value = {"sub": "google-sub-mike2", "email": "mike2@gmail.com"}
+        self.client.post(reverse("google-auth"), {"id_token": "fake-token"})
+        user = User.objects.get(email="mike2@gmail.com")
+        self.assertEqual(user.username, "mike2")
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    @patch("backend.accounts.views.google_id_token.verify_oauth2_token")
+    def test_username_is_truncated_to_16_characters(self, mock_verify):
+        local_part = "areallylongusernamehere"
+        mock_verify.return_value = {"sub": "google-sub-long", "email": f"{local_part}@gmail.com"}
+        self.client.post(reverse("google-auth"), {"id_token": "fake-token"})
+        user = User.objects.get(email=f"{local_part}@gmail.com")
+        self.assertEqual(user.username, local_part[:16])
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    @patch("backend.accounts.views.google_id_token.verify_oauth2_token")
+    def test_username_strips_characters_not_allowed_in_usernames(self, mock_verify):
+        mock_verify.return_value = {"sub": "google-sub-plus", "email": "mike+test@gmail.com"}
+        self.client.post(reverse("google-auth"), {"id_token": "fake-token"})
+        user = User.objects.get(email="mike+test@gmail.com")
+        self.assertEqual(user.username, "miketest")
+
+    @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
+    @patch("backend.accounts.views.google_id_token.verify_oauth2_token")
+    def test_username_collision_gets_a_numeric_suffix(self, mock_verify):
+        User.objects.create_user(username="mike2", email="existing@example.com", password="pw12345678")
+        mock_verify.return_value = {"sub": "google-sub-mike2b", "email": "mike2@gmail.com"}
+
+        self.client.post(reverse("google-auth"), {"id_token": "fake-token"})
+
+        user = User.objects.get(email="mike2@gmail.com")
+        self.assertNotEqual(user.username, "mike2")
+        self.assertTrue(user.username.startswith("mike2"))
+        self.assertLessEqual(len(user.username), 16)
+
+
+class ProfileUpdateTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice", email="alice@example.com", password="SuperSecret123")
+        self.client.force_authenticate(user=self.user)
+
+    def test_can_change_username(self):
+        response = self.client.patch(reverse("me"), {"username": "newname"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["username"], "newname")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.username, "newname")
+
+    def test_changed_username_can_be_used_to_log_in(self):
+        self.client.patch(reverse("me"), {"username": "newname"})
+        self.client.force_authenticate(user=None)
+
+        response = self.client.post(reverse("login"), {"username_or_email": "newname", "password": "SuperSecret123"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_rejects_duplicate_username(self):
+        User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        response = self.client.patch(reverse("me"), {"username": "bob"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_username_with_disallowed_characters(self):
+        response = self.client.patch(reverse("me"), {"username": "bad name!"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_rejects_username_over_16_characters(self):
+        response = self.client.patch(reverse("me"), {"username": "a" * 17})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class ChangePasswordTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice", email="alice@example.com", password="OldPassword123")
+        self.client.force_authenticate(user=self.user)
+
+    def test_can_change_password(self):
+        response = self.client.post(
+            reverse("change-password"),
+            {"current_password": "OldPassword123", "new_password": "NewPassword456"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("NewPassword456"))
+
+    def test_rejects_wrong_current_password(self):
+        response = self.client.post(
+            reverse("change-password"),
+            {"current_password": "WrongPassword", "new_password": "NewPassword456"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password("OldPassword123"))
+
+    def test_rejects_a_weak_new_password(self):
+        response = self.client.post(
+            reverse("change-password"),
+            {"current_password": "OldPassword123", "new_password": "password"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_google_only_account_cannot_change_a_password_that_does_not_exist(self):
+        self.user.set_unusable_password()
+        self.user.save()
+
+        response = self.client.post(
+            reverse("change-password"),
+            {"current_password": "whatever", "new_password": "NewPassword456"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            reverse("change-password"),
+            {"current_password": "OldPassword123", "new_password": "NewPassword456"},
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

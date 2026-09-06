@@ -40,14 +40,18 @@ async function refreshAccessToken() {
  * for anything else that isn't ok.
  */
 export async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
+  const isFormData = body instanceof FormData;
   const doFetch = (accessToken) =>
     fetch(`${API_URL}${path}`, {
       method,
       headers: {
-        "Content-Type": "application/json",
+        // A FormData body (e.g. a profile picture upload) needs the browser
+        // to set its own multipart Content-Type with the boundary - setting
+        // it ourselves here would break the upload.
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...(auth && accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       },
-      body: body ? JSON.stringify(body) : undefined,
+      body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
     });
 
   let { access } = getTokens();

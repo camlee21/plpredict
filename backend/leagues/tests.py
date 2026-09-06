@@ -109,6 +109,43 @@ class LeagueCreationTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+class MaxLeaguesPerUserTests(APITestCase):
+    """A user can be a member of at most 10 leagues at once, whether they get
+    there by creating a league or by joining one (by code or publicly)."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.joiner = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        for i in range(10):
+            league = League.objects.create(name=f"League {i}", owner=self.owner, is_public=True, max_members=20)
+            LeagueMembership.objects.create(league=league, user=self.joiner)
+        self.client.force_authenticate(user=self.joiner)
+
+    def test_cannot_create_an_11th_league(self):
+        response = self.client.post(reverse("league-list-create"), {"name": "One Too Many"})
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertFalse(League.objects.filter(name="One Too Many").exists())
+
+    def test_cannot_join_an_11th_league_by_code(self):
+        extra = League.objects.create(name="Extra League", owner=self.owner, max_members=20)
+        LeagueMembership.objects.create(league=extra, user=self.owner)
+
+        response = self.client.post(reverse("league-join"), {"code": extra.code})
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertFalse(LeagueMembership.objects.filter(league=extra, user=self.joiner).exists())
+
+    def test_cannot_join_an_11th_public_league(self):
+        extra = League.objects.create(name="Extra Public League", owner=self.owner, is_public=True, max_members=20)
+        LeagueMembership.objects.create(league=extra, user=self.owner)
+
+        response = self.client.post(reverse("league-join-public", args=[extra.public_id]))
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.assertFalse(LeagueMembership.objects.filter(league=extra, user=self.joiner).exists())
+
+
 class JoinByCodeTests(APITestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")

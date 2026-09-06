@@ -213,28 +213,6 @@ button.secondary {
   font-size: 1.1rem;
 }
 
-.league-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
-}
-
-.league-card {
-  text-decoration: none;
-  color: inherit;
-  display: block;
-  transition: transform 0.1s ease;
-}
-
-.league-card:hover {
-  transform: translateY(-2px);
-  border-color: var(--purple);
-}
-
-.league-card h3 {
-  margin: 0 0 8px;
-}
-
 .back-link {
   color: var(--muted);
   text-decoration: none;
@@ -388,6 +366,26 @@ button.secondary {
 
 .standings-table tr:last-child td {
   border-bottom: none;
+}
+
+.profile-page .card + .card {
+  margin-top: 20px;
+}
+
+.profile-stats-row {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.profile-stat {
+  min-width: 100px;
+}
+
+.profile-stat .stat-value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: var(--purple);
 }
 
 .gameweek-selector {

@@ -10,6 +10,7 @@ import LeaguePage from "./pages/LeaguePage";
 import LeaguesPage from "./pages/LeaguesPage";
 import LoginPage from "./pages/LoginPage";
 import PredictionsPage from "./pages/PredictionsPage";
+import ProfilePage from "./pages/ProfilePage";
 import RegisterPage from "./pages/RegisterPage";
 
 function App() {
@@ -62,6 +63,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <GameweekScorePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
               </ProtectedRoute>
             }
           />

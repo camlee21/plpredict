@@ -13,6 +13,8 @@ from backend.predictions.scoring import calculate_points
 from .models import League, LeagueMembership
 from .serializers import CreateLeagueSerializer, JoinLeagueSerializer, LeagueSerializer, PublicLeagueSerializer
 
+MAX_LEAGUES_PER_USER = 10
+
 
 def _rank_by_points(rows):
     """Assigns standard competition ranking (1, 2, =3, =3, 5, ...) to `rows`
@@ -75,6 +77,11 @@ def _join_league(user, league):
             return Response(LeagueSerializer(locked_league).data)
         if locked_league.memberships.count() >= locked_league.max_members:
             return Response({"detail": "This league is full."}, status=status.HTTP_409_CONFLICT)
+        if LeagueMembership.objects.filter(user=user).count() >= MAX_LEAGUES_PER_USER:
+            return Response(
+                {"detail": f"You can only be in up to {MAX_LEAGUES_PER_USER} leagues at a time."},
+                status=status.HTTP_409_CONFLICT,
+            )
         LeagueMembership.objects.create(league=locked_league, user=user)
     return Response(LeagueSerializer(locked_league).data)
 
@@ -87,6 +94,11 @@ class LeagueListCreateView(APIView):
         return Response(LeagueSerializer(leagues, many=True).data)
 
     def post(self, request):
+        if LeagueMembership.objects.filter(user=request.user).count() >= MAX_LEAGUES_PER_USER:
+            return Response(
+                {"detail": f"You can only be in up to {MAX_LEAGUES_PER_USER} leagues at a time."},
+                status=status.HTTP_409_CONFLICT,
+            )
         serializer = CreateLeagueSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         league = serializer.save(owner=request.user, starting_gameweek=current_gameweek_number())

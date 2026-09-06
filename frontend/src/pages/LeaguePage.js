@@ -90,7 +90,7 @@ export default function LeaguePage() {
       <table className="standings-table">
         <thead>
           <tr>
-            <th>#</th>
+            <th>Pos</th>
             <th>Player</th>
             <th>{league.current_gameweek ? `GW${league.current_gameweek}` : "Current GW"}</th>
             <th>Total</th>

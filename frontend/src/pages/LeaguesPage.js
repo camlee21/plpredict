@@ -155,20 +155,25 @@ export default function LeaguesPage() {
         </form>
       </div>
 
-      <h2>Leagues you're in</h2>
+      <h2>Your leagues</h2>
       {leagues === null && <p>Loading...</p>}
       {leagues && leagues.length === 0 && <p className="muted">You haven't joined any leagues yet.</p>}
-      <div className="league-grid">
-        {leagues?.map((league) => (
-          <Link to={`/leagues/${league.public_id}`} key={league.public_id} className="card league-card">
-            <h3>{league.name}</h3>
-            <p className="muted">{league.is_public ? "Public" : "Private"}</p>
-            <p className="muted">
-              {league.member_count}/{league.max_members} member{league.member_count === 1 ? "" : "s"}
-            </p>
-          </Link>
-        ))}
-      </div>
+      {leagues && leagues.length > 0 && (
+        <div className="league-row-list">
+          {leagues.map((league) => (
+            <div className="league-row" key={league.public_id}>
+              <span className="league-row-name">{league.name}</span>
+              <span className="league-row-detail muted">{league.is_public ? "Public" : "Private"}</span>
+              <span className="league-row-detail muted">
+                {league.member_count}/{league.max_members}
+              </span>
+              <Link to={`/leagues/${league.public_id}`} className="league-row-action">
+                View league
+              </Link>
+            </div>
+          ))}
+        </div>
+      )}
 
       <h2>Browse public leagues</h2>
       <div className="browse-filters">

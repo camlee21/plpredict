@@ -22,7 +22,9 @@ export default function Navbar() {
         <Link to="/leagues">Leagues</Link>
         <Link to="/fixtures">Fixtures</Link>
         <Link to="/predict">Predict</Link>
-        <span className="nav-user">{user.username}</span>
+        <Link to="/profile" className="nav-user">
+          {user.username}
+        </Link>
         <button className="link-button" onClick={handleLogout}>
           Log out
         </button>
