@@ -145,6 +145,10 @@ PREDICTION_LOCK_BEFORE_KICKOFF = timedelta(hours=1)
 # scores (approximates full-time + the 30 minute buffer from the spec).
 GAMEWEEK_FINALIZE_AFTER_LAST_KICKOFF = timedelta(hours=2, minutes=30)
 
+# Seconds between automatic background pulls of fixtures/results from the FPL
+# API while the dev server is running (see backend/fixtures/apps.py). 0 disables it.
+AUTO_SYNC_INTERVAL_SECONDS = int(os.environ.get("AUTO_SYNC_INTERVAL_SECONDS", "300"))
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
