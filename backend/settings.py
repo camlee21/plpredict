@@ -94,6 +94,10 @@ DATABASES = {
     "default": dj_database_url.config(
         default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}",
         conn_max_age=600,
+        # Neon suspends idle compute after ~5 minutes and kills open
+        # connections when it does; without this, a worker reusing one of
+        # those dead persistent connections 500s on its next query.
+        conn_health_checks=True,
     )
 }
 
