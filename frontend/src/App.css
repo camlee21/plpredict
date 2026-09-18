@@ -55,6 +55,12 @@ body {
   font-weight: 600;
 }
 
+.nav-divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
 .link-button {
   background: none;
   border: none;
@@ -235,6 +241,18 @@ button.secondary {
   margin: 0 0 4px;
   font-size: 1rem;
   color: var(--muted);
+}
+
+.home-last-score-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.home-last-score-link:hover {
+  border-color: var(--purple);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
 
 .score-highlight {

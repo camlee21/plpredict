@@ -22,6 +22,7 @@ export default function Navbar() {
         <Link to="/leagues">Leagues</Link>
         <Link to="/fixtures">Fixtures</Link>
         <Link to="/predict">Predict</Link>
+        <span className="nav-divider" aria-hidden="true" />
         <Link to="/profile" className="nav-user">
           {user.username}
         </Link>

@@ -52,11 +52,11 @@ export default function HomePage() {
       {error && <div className="error-banner">{error}</div>}
 
       {lastScore && (
-        <div className="card home-last-score">
+        <Link to={`/scores/${lastScore.gameweek}`} className="card home-last-score home-last-score-link">
           <h2>Your last score</h2>
           <p className="score-highlight">{lastScore.points} pts</p>
           <p className="muted">Gameweek {lastScore.gameweek}</p>
-        </div>
+        </Link>
       )}
 
       {gwScore !== null && (

@@ -68,6 +68,24 @@ def _current_gameweek_points(member_ids, gameweek_number):
     return points
 
 
+def _my_standing(league, user_id):
+    """The requesting user's rank/points within `league`, using the same
+    standard-competition ranking as the full standings table."""
+    member_ids = list(league.memberships.values_list("user_id", flat=True))
+    totals = {
+        row["user__id"]: row["total"] or 0
+        for row in Prediction.objects.filter(
+            user_id__in=member_ids, fixture__gameweek__is_scored=True
+        )
+        .values("user__id")
+        .annotate(total=Sum("points"))
+    }
+    standings = _rank_by_points(
+        [{"user_id": uid, "total_points": totals.get(uid, 0)} for uid in member_ids]
+    )
+    return next(row for row in standings if row["user_id"] == user_id)
+
+
 def _join_league(user, league):
     """Adds `user` to `league` if there's room, locking the row to avoid a
     race letting the league exceed max_members under concurrent joins."""
@@ -91,7 +109,17 @@ class LeagueListCreateView(APIView):
 
     def get(self, request):
         leagues = League.objects.filter(memberships__user=request.user).order_by("-created_at")
-        return Response(LeagueSerializer(leagues, many=True).data)
+        data = []
+        for league in leagues:
+            mine = _my_standing(league, request.user.id)
+            data.append(
+                {
+                    **LeagueSerializer(league).data,
+                    "rank_display": mine["rank_display"],
+                    "total_points": mine["total_points"],
+                }
+            )
+        return Response(data)
 
     def post(self, request):
         if LeagueMembership.objects.filter(user=request.user).count() >= MAX_LEAGUES_PER_USER:
@@ -213,24 +241,12 @@ class LeagueHomeSummaryView(APIView):
     def get(self, request):
         summaries = []
         for league in League.objects.filter(memberships__user=request.user):
-            member_ids = list(league.memberships.values_list("user_id", flat=True))
-            totals = {
-                row["user__id"]: row["total"] or 0
-                for row in Prediction.objects.filter(
-                    user_id__in=member_ids, fixture__gameweek__is_scored=True
-                )
-                .values("user__id")
-                .annotate(total=Sum("points"))
-            }
-            standings = _rank_by_points(
-                [{"user_id": uid, "total_points": totals.get(uid, 0)} for uid in member_ids]
-            )
-            mine = next(row for row in standings if row["user_id"] == request.user.id)
+            mine = _my_standing(league, request.user.id)
             summaries.append(
                 {
                     "public_id": league.public_id,
                     "name": league.name,
-                    "member_count": len(member_ids),
+                    "member_count": league.memberships.count(),
                     "total_points": mine["total_points"],
                     "rank": mine["rank"],
                     "rank_display": mine["rank_display"],

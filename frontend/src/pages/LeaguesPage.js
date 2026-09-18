@@ -167,6 +167,7 @@ export default function LeaguesPage() {
               <span className="league-row-detail muted">
                 {league.member_count}/{league.max_members}
               </span>
+              <span className="league-row-detail muted">{league.rank_display}</span>
               <Link to={`/leagues/${league.public_id}`} className="league-row-action">
                 View league
               </Link>
