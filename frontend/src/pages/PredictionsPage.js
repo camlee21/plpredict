@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
 import { formatDateTime } from "../utils/format";
@@ -41,6 +41,10 @@ export default function PredictionsPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimeout = useRef(null);
+
+  useEffect(() => () => clearTimeout(justSavedTimeout.current), []);
 
   useEffect(() => {
     apiRequest("/api/fixtures/gameweeks/")
@@ -60,6 +64,8 @@ export default function PredictionsPage() {
     if (selected == null) return;
     setError("");
     setMessage("");
+    setJustSaved(false);
+    clearTimeout(justSavedTimeout.current);
     apiRequest(`/api/predictions/gameweek/${selected}/`)
       .then((gwData) => {
         setData(gwData);
@@ -120,6 +126,9 @@ export default function PredictionsPage() {
       });
       setData(updated);
       setMessage("All predictions saved!");
+      setJustSaved(true);
+      clearTimeout(justSavedTimeout.current);
+      justSavedTimeout.current = setTimeout(() => setJustSaved(false), 1000);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -212,8 +221,8 @@ export default function PredictionsPage() {
               ))}
             </div>
 
-            <button type="submit" className="primary" disabled={!canSave || saving}>
-              {saving ? "Saving..." : "Save predictions"}
+            <button type="submit" className="primary" disabled={!canSave || saving || justSaved}>
+              {saving ? "Saving..." : justSaved ? "Saved!" : "Save predictions"}
             </button>
             {missingCount > 0 && (
               <p className="muted">
