@@ -45,6 +45,36 @@ class RegisterTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("email", response.data)
 
+    def test_rejects_registering_with_an_email_already_used_for_google_sign_in(self):
+        google_user = User.objects.create_user(username="alice", email="alice@gmail.com")
+        google_user.google_sub = "google-sub-123"
+        google_user.save()
+        self.assertFalse(google_user.has_usable_password())
+
+        response = self.client.post(
+            reverse("register"),
+            {"username": "alice2", "email": "alice@gmail.com", "password": "SuperSecret123"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("email", response.data)
+        # No second account was created, and the Google account is untouched -
+        # it still has no password an attacker/confused user could log in with.
+        self.assertEqual(User.objects.filter(email__iexact="alice@gmail.com").count(), 1)
+        google_user.refresh_from_db()
+        self.assertFalse(google_user.has_usable_password())
+
+    def test_register_rejects_duplicate_email_case_insensitively(self):
+        User.objects.create_user(username="alice", email="Alice@Gmail.com")
+
+        response = self.client.post(
+            reverse("register"),
+            {"username": "bob", "email": "alice@gmail.com", "password": "SuperSecret123"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("email", response.data)
+
     def test_register_rejects_weak_password(self):
         response = self.client.post(
             reverse("register"),
@@ -146,6 +176,9 @@ class GoogleAuthTests(APITestCase):
         existing.refresh_from_db()
         self.assertEqual(existing.google_sub, "google-sub-456")
         self.assertEqual(User.objects.filter(email="alice@example.com").count(), 1)
+        # Linking a Google login to an existing account must not clobber the
+        # password it already had - it should be able to log in either way.
+        self.assertTrue(existing.check_password("SuperSecret123"))
 
     @override_settings(GOOGLE_OAUTH_CLIENT_ID="test-client-id")
     @patch("backend.accounts.views.google_id_token.verify_oauth2_token")

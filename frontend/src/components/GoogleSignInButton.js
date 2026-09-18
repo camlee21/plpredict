@@ -35,5 +35,5 @@ export default function GoogleSignInButton({ onError }) {
     );
   }
 
-  return <div ref={divRef} />;
+  return <div ref={divRef} className="google-signin-wrapper" />;
 }
