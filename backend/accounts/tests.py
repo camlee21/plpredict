@@ -292,3 +292,68 @@ class ChangePasswordTests(APITestCase):
             {"current_password": "OldPassword123", "new_password": "NewPassword456"},
         )
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class UserAdminTests(APITestCase):
+    """The Django admin site (/admin/) is where staff manage users - this
+    covers the bulk activate/deactivate actions and that only staff can get in."""
+
+    def setUp(self):
+        self.staff = User.objects.create_superuser(username="staffuser", email="staff@example.com", password="AdminPass123")
+        self.alice = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.bob = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+
+    def test_non_staff_cannot_reach_the_user_admin(self):
+        self.client.force_login(self.alice)
+        response = self.client.get(reverse("admin:accounts_user_changelist"))
+        self.assertEqual(response.status_code, status.HTTP_302_FOUND)
+
+    def test_staff_can_list_users(self):
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse("admin:accounts_user_changelist"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_deactivate_users_action_disables_login(self):
+        self.client.force_login(self.staff)
+        response = self.client.post(
+            reverse("admin:accounts_user_changelist"),
+            {"action": "deactivate_users", "_selected_action": [str(self.alice.pk), str(self.bob.pk)]},
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.alice.refresh_from_db()
+        self.bob.refresh_from_db()
+        self.assertFalse(self.alice.is_active)
+        self.assertFalse(self.bob.is_active)
+
+    def test_deactivate_users_action_cannot_deactivate_yourself(self):
+        self.client.force_login(self.staff)
+        self.client.post(
+            reverse("admin:accounts_user_changelist"),
+            {"action": "deactivate_users", "_selected_action": [str(self.staff.pk)]},
+            follow=True,
+        )
+        self.staff.refresh_from_db()
+        self.assertTrue(self.staff.is_active)
+
+    def test_activate_users_action_restores_login(self):
+        self.alice.is_active = False
+        self.alice.save(update_fields=["is_active"])
+
+        self.client.force_login(self.staff)
+        self.client.post(
+            reverse("admin:accounts_user_changelist"),
+            {"action": "activate_users", "_selected_action": [str(self.alice.pk)]},
+            follow=True,
+        )
+        self.alice.refresh_from_db()
+        self.assertTrue(self.alice.is_active)
+
+    def test_deactivated_user_cannot_log_in(self):
+        self.alice.is_active = False
+        self.alice.save(update_fields=["is_active"])
+
+        response = self.client.post(
+            reverse("login"), {"username_or_email": "alice", "password": "pw12345678"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
