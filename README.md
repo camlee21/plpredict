@@ -5,18 +5,17 @@ This project was bootstrapped with [Create React App](https://github.com/faceboo
 ## Deployment
 
 - **Frontend**: Vercel, Root Directory `frontend`. Env vars: `REACT_APP_API_URL` (the Render backend URL), `REACT_APP_GOOGLE_CLIENT_ID`.
-- **Backend**: Render Web Service, build command `pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate`, start command `gunicorn backend.wsgi:application`. Env vars: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `DATABASE_URL`, `GOOGLE_OAUTH_CLIENT_ID`.
+- **Backend**: Render Web Service, build command `pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate`, start command `gunicorn backend.wsgi:application --timeout 120`. Env vars: `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=False`, `DJANGO_ALLOWED_HOSTS`, `DJANGO_CSRF_TRUSTED_ORIGINS`, `CORS_ALLOWED_ORIGINS`, `DATABASE_URL`, `GOOGLE_OAUTH_CLIENT_ID`, `SYNC_TRIGGER_SECRET`.
 - **Database**: Neon Postgres, referenced via `DATABASE_URL`. Falls back to local SQLite when that's unset (the default for local dev).
 
 ### Keeping fixtures/scores up to date in production
 
-Locally, `backend/fixtures/apps.py` starts a background thread under `manage.py runserver` that periodically runs `sync_fixtures` and `score_gameweeks` - but that's a dev-only convenience and **does not run under gunicorn**. In production this needs a separate **Render Cron Job**:
+Locally, `backend/fixtures/apps.py` starts a background thread under `manage.py runserver` that periodically runs `sync_fixtures` and `score_gameweeks` - but that's a dev-only convenience and **does not run under gunicorn**. Render Cron Jobs cost money even at the lowest usage, so production instead uses a secured HTTP endpoint plus a free external scheduler:
 
-1. Render dashboard → **New → Cron Job**, pointed at this same repo/branch.
-2. Build command: `pip install -r requirements.txt`
-3. Command: `python manage.py sync_fixtures && python manage.py score_gameweeks`
-4. Schedule: every 5-10 minutes, e.g. `*/5 * * * *`
-5. Give it the same `DATABASE_URL` (and any other required) env vars as the web service.
+1. Render web service env var `SYNC_TRIGGER_SECRET` - a random secret, e.g. from `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+2. A free scheduler (e.g. [cron-job.org](https://cron-job.org)) configured to `POST` to `https://<render-backend>/api/fixtures/sync/trigger/` every 5-10 minutes, with header `X-Sync-Secret: <the same secret>`.
+3. That view (`SyncTriggerView` in `backend/fixtures/views.py`) checks the header against `SYNC_TRIGGER_SECRET` (404s on any mismatch) and, if it matches, runs `sync_fixtures` then `score_gameweeks`.
+4. The `--timeout 120` on the Gunicorn start command matters here: those two commands run synchronously inside the request, and Gunicorn's *default* 30s worker timeout is easily exceeded on Render's free-tier CPU, silently killing the worker mid-sync and rolling back the whole `@transaction.atomic` sync before anything is saved.
 
 ## Available Scripts
 

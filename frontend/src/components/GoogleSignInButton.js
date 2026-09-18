@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 const CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID;
 
 export default function GoogleSignInButton({ onError }) {
   const { loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
   const divRef = useRef(null);
 
   useEffect(() => {
@@ -28,6 +30,7 @@ export default function GoogleSignInButton({ onError }) {
         callback: async (response) => {
           try {
             await loginWithGoogle(response.credential);
+            navigate("/");
           } catch (err) {
             onError?.(err.message);
           }
@@ -44,7 +47,7 @@ export default function GoogleSignInButton({ onError }) {
     return () => {
       cancelled = true;
     };
-  }, [loginWithGoogle, onError]);
+  }, [loginWithGoogle, onError, navigate]);
 
   if (!CLIENT_ID) {
     return (
