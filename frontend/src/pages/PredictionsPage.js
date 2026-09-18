@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
+import LoadingIndicator from "../components/LoadingIndicator";
 import { formatDateTime } from "../utils/format";
 
 function gameweekOptionLabel(gw) {
@@ -34,7 +35,9 @@ function useCountdown(deadline) {
 }
 
 export default function PredictionsPage() {
-  const [gameweeks, setGameweeks] = useState([]);
+  // null until the gameweek list has loaded (or failed to).
+  const [gameweeks, setGameweeks] = useState(null);
+  const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(null);
   const [data, setData] = useState(null);
   const [scores, setScores] = useState({});
@@ -57,13 +60,16 @@ export default function PredictionsPage() {
           if (list.length) setSelected(list[0].number);
         }
       })
-      .catch((err) => setError(err.message));
+      .catch((err) =>
+        setLoadError(`Couldn't load the gameweeks: ${err.message}. Please refresh the page to try again.`)
+      );
   }, []);
 
   useEffect(() => {
     if (selected == null) return;
     setError("");
     setMessage("");
+    setData(null);
     setJustSaved(false);
     clearTimeout(justSavedTimeout.current);
     apiRequest(`/api/predictions/gameweek/${selected}/`)
@@ -140,27 +146,36 @@ export default function PredictionsPage() {
     <div className="page">
       <h1>Predict</h1>
 
-      <div className="gameweek-selector">
-        <label>
-          Gameweek
-          <select value={selected ?? ""} onChange={(e) => setSelected(Number(e.target.value))}>
-            {gameweeks.map((gw) => (
-              <option key={gw.number} value={gw.number}>
-                {gameweekOptionLabel(gw)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      {gameweeks && gameweeks.length > 0 && (
+        <div className="gameweek-selector">
+          <label>
+            Gameweek
+            <select value={selected ?? ""} onChange={(e) => setSelected(Number(e.target.value))}>
+              {gameweeks.map((gw) => (
+                <option key={gw.number} value={gw.number}>
+                  {gameweekOptionLabel(gw)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
 
+      {loadError && <div className="error-banner">{loadError}</div>}
       {error && <div className="error-banner">{error}</div>}
       {message && <div className="success-banner">{message}</div>}
 
-      {gameweeks.length === 0 && !error && (
+      {gameweeks === null && !loadError && <LoadingIndicator label="Loading fixtures..." />}
+
+      {gameweeks && gameweeks.length === 0 && (
         <p className="muted">
-          No gameweeks are loaded yet. Run <code>python manage.py sync_fixtures</code> on the backend
-          to pull fixtures from the Fantasy Premier League API.
+          Fixtures haven't been loaded yet. They're pulled in automatically from the Premier League,
+          so please check back shortly.
         </p>
+      )}
+
+      {gameweeks && gameweeks.length > 0 && !data && !error && (
+        <LoadingIndicator label="Loading gameweek..." />
       )}
 
       {data && data.is_locked && (

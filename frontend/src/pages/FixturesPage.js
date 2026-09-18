@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
+import LoadingIndicator from "../components/LoadingIndicator";
 
 function gameweekOptionLabel(gw) {
   return `Gameweek ${gw.number}${gw.lifecycle === "current" ? " (current)" : ""}`;
 }
 
 export default function FixturesPage() {
-  const [gameweeks, setGameweeks] = useState([]);
+  // null until the gameweek list has loaded (or failed to).
+  const [gameweeks, setGameweeks] = useState(null);
+  const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(null);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -23,12 +26,15 @@ export default function FixturesPage() {
           if (list.length) setSelected(list[list.length - 1].number);
         }
       })
-      .catch((err) => setError(err.message));
+      .catch((err) =>
+        setLoadError(`Couldn't load the gameweeks: ${err.message}. Please refresh the page to try again.`)
+      );
   }, []);
 
   useEffect(() => {
     if (selected == null) return;
     setError("");
+    setData(null);
     apiRequest(`/api/fixtures/gameweeks/${selected}/`)
       .then(setData)
       .catch((err) => setError(err.message));
@@ -38,7 +44,7 @@ export default function FixturesPage() {
     <div className="page">
       <h1>Fixtures &amp; Results</h1>
 
-      {gameweeks.length > 0 && (
+      {gameweeks && gameweeks.length > 0 && (
         <div className="gameweek-selector">
           <label>
             Gameweek
@@ -53,13 +59,20 @@ export default function FixturesPage() {
         </div>
       )}
 
+      {loadError && <div className="error-banner">{loadError}</div>}
       {error && <div className="error-banner">{error}</div>}
 
-      {gameweeks.length === 0 && !error && (
+      {gameweeks === null && !loadError && <LoadingIndicator label="Loading fixtures..." />}
+
+      {gameweeks && gameweeks.length === 0 && (
         <p className="muted">
-          No gameweeks are loaded yet. Run <code>python manage.py sync_fixtures</code> on the backend
-          to pull teams and fixtures from the Fantasy Premier League API.
+          Fixtures haven't been loaded yet. They're pulled in automatically from the Premier League,
+          so please check back shortly.
         </p>
+      )}
+
+      {gameweeks && gameweeks.length > 0 && !data && !error && (
+        <LoadingIndicator label="Loading gameweek..." />
       )}
 
       {data && (

@@ -132,8 +132,8 @@ export default function HomePage() {
       {gameweek === undefined && <p>Loading...</p>}
       {gameweek === null && (
         <p className="muted">
-          No gameweeks are loaded yet. Run <code>python manage.py sync_fixtures</code> on the backend
-          to pull fixtures from the Fantasy Premier League API.
+          Fixtures haven't been loaded yet. They're pulled in automatically from the Premier League,
+          so please check back shortly.
         </p>
       )}
       {gameweek && (
