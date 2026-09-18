@@ -166,6 +166,26 @@ AUTO_SYNC_INTERVAL_SECONDS = int(os.environ.get("AUTO_SYNC_INTERVAL_SECONDS", "3
 # Left blank, the endpoint always 404s.
 SYNC_TRIGGER_SECRET = os.environ.get("SYNC_TRIGGER_SECRET", "")
 
+# Django's default logging config only sends unhandled-exception tracebacks
+# to the console when DEBUG=True (its console handler is gated on
+# require_debug_true) - so with DEBUG=False in production, 500s would
+# otherwise vanish from Render's logs entirely. Override that so they always
+# print to stdout/stderr, regardless of DEBUG.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "loggers": {
+        "django.request": {
+            "handlers": ["console"],
+            "level": "ERROR",
+            "propagate": False,
+        },
+    },
+}
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
