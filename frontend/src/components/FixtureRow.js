@@ -7,7 +7,10 @@ export function FormBadges({ form }) {
   return (
     <span className="form-badges">
       {form.map((result, index) => (
-        <span key={index} className={`form-badge ${result.toLowerCase()}`}>
+        <span
+          key={index}
+          className={`form-badge ${result.toLowerCase()}${index === form.length - 1 ? " form-badge-latest" : ""}`}
+        >
           {result}
         </span>
       ))}

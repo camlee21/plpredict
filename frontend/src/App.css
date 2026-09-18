@@ -575,6 +575,10 @@ button.secondary {
   background: #d1354b;
 }
 
+.form-badge-latest {
+  transform: scale(1.15);
+}
+
 @media (max-width: 640px) {
   .league-actions {
     grid-template-columns: 1fr;
