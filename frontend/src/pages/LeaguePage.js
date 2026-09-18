@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 
 export default function LeaguePage() {
   const { publicId } = useParams();
   const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
   const [league, setLeague] = useState(null);
   const [membersOnly, setMembersOnly] = useState(false);
   const [error, setError] = useState("");
   const [copiedCode, setCopiedCode] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -34,6 +37,21 @@ export default function LeaguePage() {
     navigator.clipboard?.writeText(league.code);
     setCopiedCode(true);
     setTimeout(() => setCopiedCode(false), 1500);
+  };
+
+  const handleLeave = async () => {
+    if (!window.confirm(`Leave "${league.name}"? You'll need to rejoin (by code, or publicly if it's public) to get back in.`)) {
+      return;
+    }
+    setLeaveError("");
+    setLeaving(true);
+    try {
+      await apiRequest(`/api/leagues/${publicId}/leave/`, { method: "POST" });
+      navigate("/leagues");
+    } catch (err) {
+      setLeaveError(err.message);
+      setLeaving(false);
+    }
   };
 
   if (authLoading) return <div className="page-loading">Loading...</div>;
@@ -82,6 +100,15 @@ export default function LeaguePage() {
           </span>
           <button className="secondary" onClick={copyCode}>
             {copiedCode ? "Copied!" : "Copy code"}
+          </button>
+        </div>
+      )}
+
+      {!league.is_owner && (
+        <div className="league-leave-row">
+          {leaveError && <div className="error-banner">{leaveError}</div>}
+          <button className="secondary" onClick={handleLeave} disabled={leaving}>
+            {leaving ? "Leaving..." : "Leave league"}
           </button>
         </div>
       )}

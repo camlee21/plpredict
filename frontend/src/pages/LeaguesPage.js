@@ -190,7 +190,8 @@ export default function LeaguesPage() {
           Filter by
           <select value={browseFilter} onChange={(e) => setBrowseFilter(e.target.value)}>
             <option value="recent">Recent</option>
-            <option value="vacant">Vacant (room to join)</option>
+            <option value="capacity_desc">Capacity (High-Low)</option>
+            <option value="capacity_asc">Capacity (Low-High)</option>
           </select>
         </label>
       </div>

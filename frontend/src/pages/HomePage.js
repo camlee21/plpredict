@@ -67,19 +67,32 @@ export default function HomePage() {
             <div className="league-row-list">
               <div className="league-row">
                 <span className="league-row-name">Gameweek {gwScore.gameweek}</span>
-                <span className="league-row-detail muted">
-                  {gwScoreSummary.hasPredictions ? `${gwScoreSummary.totalPoints} pts` : "No predictions"}
-                </span>
-                <span className="league-row-detail muted">
-                  {gwScoreSummary.hasPredictions
-                    ? gwScoreSummary.stillToPlay > 0
-                      ? `${gwScoreSummary.stillToPlay} to play`
-                      : "All played"
-                    : ""}
-                </span>
-                <Link to={`/scores/${gwScore.gameweek}`} className="league-row-action">
-                  View breakdown
-                </Link>
+                {gwScore.is_locked ? (
+                  <>
+                    <span className="league-row-detail muted">
+                      {gwScoreSummary.hasPredictions ? `${gwScoreSummary.totalPoints} pts` : "No predictions"}
+                    </span>
+                    <span className="league-row-detail muted">
+                      {gwScoreSummary.hasPredictions
+                        ? gwScoreSummary.stillToPlay > 0
+                          ? `${gwScoreSummary.stillToPlay} to play`
+                          : "All played"
+                        : ""}
+                    </span>
+                    <Link to={`/scores/${gwScore.gameweek}`} className="league-row-action">
+                      View breakdown
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <span className="league-row-detail muted">
+                      {gwScoreSummary.fullyPredicted ? "Predictions saved" : "Predictions unsaved"}
+                    </span>
+                    <Link to="/predict" className="league-row-action">
+                      {gwScoreSummary.fullyPredicted ? "Edit predictions" : "Make predictions"}
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           )}

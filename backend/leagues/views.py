@@ -137,30 +137,40 @@ class LeagueListCreateView(APIView):
 class PublicLeagueListView(APIView):
     """Browsable listing of public leagues that can be joined without a code.
 
-    Supports ?search=<name substring> and ?filter=recent|vacant (default
-    "recent") to narrow the listing down. "vacant" only shows leagues that
-    still have room to join.
+    A league that's already full is never joinable, so it's excluded here
+    unconditionally - if it later frees up a spot (someone leaves) it becomes
+    eligible again automatically, since this is computed fresh on every request.
+
+    Supports ?search=<name substring> and ?filter=recent|capacity_desc|capacity_asc
+    (default "recent") to narrow/order the listing.
     """
 
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        leagues = League.objects.filter(is_public=True).annotate(member_total=Count("memberships"))
+        leagues = (
+            League.objects.filter(is_public=True)
+            .annotate(member_total=Count("memberships"))
+            .filter(member_total__lt=F("max_members"))
+        )
 
         search = request.query_params.get("search", "").strip()
         if search:
             leagues = leagues.filter(name__icontains=search)
 
         filter_by = request.query_params.get("filter", "recent")
-        if filter_by == "vacant":
-            leagues = leagues.filter(member_total__lt=F("max_members"))
-        elif filter_by != "recent":
+        if filter_by == "recent":
+            leagues = leagues.order_by("-created_at")
+        elif filter_by == "capacity_desc":
+            leagues = leagues.order_by("-max_members", "-created_at")
+        elif filter_by == "capacity_asc":
+            leagues = leagues.order_by("max_members", "-created_at")
+        else:
             return Response(
-                {"detail": "filter must be 'recent' or 'vacant'."},
+                {"detail": "filter must be 'recent', 'capacity_desc' or 'capacity_asc'."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        leagues = leagues.order_by("-created_at")
         serializer = PublicLeagueSerializer(leagues, many=True, context={"request": request})
         return Response(serializer.data)
 
@@ -190,6 +200,24 @@ class JoinPublicLeagueView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         return _join_league(request.user, league)
+
+
+class LeaveLeagueView(APIView):
+    """Leave a league you're a member of. Owners can't leave their own
+    league - there's no ownership transfer or league deletion yet, so
+    letting them leave would strand the league without an owner."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, public_id):
+        league = get_object_or_404(League, public_id=public_id, memberships__user=request.user)
+        if league.owner_id == request.user.id:
+            return Response(
+                {"detail": "League owners can't leave their own league."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        LeagueMembership.objects.filter(league=league, user=request.user).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class LeagueDetailView(APIView):

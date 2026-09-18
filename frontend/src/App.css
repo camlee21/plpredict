@@ -232,6 +232,14 @@ button.secondary {
   margin: 0 0 16px;
 }
 
+.league-leave-row {
+  margin: 0 0 20px;
+}
+
+.league-leave-row .error-banner {
+  margin-bottom: 12px;
+}
+
 .home-last-score {
   max-width: 260px;
   margin-bottom: 24px;

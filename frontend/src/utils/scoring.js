@@ -44,5 +44,10 @@ export function gameweekScoreSummary(gwScore) {
   const predicted = gwScore.fixtures.filter((f) => f.prediction != null);
   const finished = predicted.filter(isFixtureFinished);
   const totalPoints = finished.reduce((sum, f) => sum + fixturePoints(f), 0);
-  return { hasPredictions: predicted.length > 0, totalPoints, stillToPlay: predicted.length - finished.length };
+  return {
+    hasPredictions: predicted.length > 0,
+    fullyPredicted: gwScore.fixtures.length > 0 && predicted.length === gwScore.fixtures.length,
+    totalPoints,
+    stillToPlay: predicted.length - finished.length,
+  };
 }

@@ -246,6 +246,60 @@ class JoinPublicLeagueTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+class LeaveLeagueTests(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.member = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        self.outsider = User.objects.create_user(username="eve", email="eve@example.com", password="pw12345678")
+        self.league = League.objects.create(name="Office League", owner=self.owner, is_public=True, max_members=8)
+        LeagueMembership.objects.create(league=self.league, user=self.owner)
+        LeagueMembership.objects.create(league=self.league, user=self.member)
+
+    def test_a_member_can_leave(self):
+        self.client.force_authenticate(user=self.member)
+        response = self.client.post(reverse("league-leave", args=[self.league.public_id]))
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(LeagueMembership.objects.filter(league=self.league, user=self.member).exists())
+
+    def test_the_owner_cannot_leave_their_own_league(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.post(reverse("league-leave", args=[self.league.public_id]))
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(LeagueMembership.objects.filter(league=self.league, user=self.owner).exists())
+
+    def test_a_non_member_cannot_leave(self):
+        self.client.force_authenticate(user=self.outsider)
+        response = self.client.post(reverse("league-leave", args=[self.league.public_id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unknown_public_id_returns_404(self):
+        self.client.force_authenticate(user=self.member)
+        response = self.client.post(reverse("league-leave", args=["ZZZZZZZZ"]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_requires_authentication(self):
+        response = self.client.post(reverse("league-leave", args=[self.league.public_id]))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_leaving_frees_a_spot_for_a_previously_full_public_league_to_reappear_in_search(self):
+        full_league = League.objects.create(name="Snug League", owner=self.owner, is_public=True, max_members=2)
+        LeagueMembership.objects.create(league=full_league, user=self.owner)
+        LeagueMembership.objects.create(league=full_league, user=self.member)
+
+        self.client.force_authenticate(user=self.outsider)
+        response = self.client.get(reverse("league-browse"))
+        self.assertNotIn("Snug League", [row["name"] for row in response.data])
+
+        self.client.force_authenticate(user=self.member)
+        self.client.post(reverse("league-leave", args=[full_league.public_id]))
+
+        self.client.force_authenticate(user=self.outsider)
+        response = self.client.get(reverse("league-browse"))
+        self.assertIn("Snug League", [row["name"] for row in response.data])
+
+
 class PublicLeagueBrowseTests(APITestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
@@ -278,21 +332,25 @@ class PublicLeagueBrowseTests(APITestCase):
         self.assertEqual(row["member_count"], 1)
         self.assertEqual(row["max_members"], 2)
 
-    def test_browse_listing_flags_full_leagues(self):
+    def test_full_leagues_are_excluded_from_the_listing_entirely(self):
         LeagueMembership.objects.create(league=self.public_league, user=self.viewer)
         other_user = User.objects.create_user(username="eve", email="eve@example.com", password="pw12345678")
         self.client.force_authenticate(user=other_user)
 
         response = self.client.get(reverse("league-browse"))
-        row = next(r for r in response.data if r["public_id"] == self.public_league.public_id)
 
-        self.assertTrue(row["is_full"])
+        ids = [row["public_id"] for row in response.data]
+        self.assertNotIn(self.public_league.public_id, ids)
 
     def test_browse_listing_flags_leagues_i_have_already_joined(self):
-        LeagueMembership.objects.create(league=self.public_league, user=self.viewer)
+        roomier_league = League.objects.create(
+            name="Roomier League", owner=self.owner, is_public=True, max_members=8
+        )
+        LeagueMembership.objects.create(league=roomier_league, user=self.owner)
+        LeagueMembership.objects.create(league=roomier_league, user=self.viewer)
 
         response = self.client.get(reverse("league-browse"))
-        row = next(r for r in response.data if r["public_id"] == self.public_league.public_id)
+        row = next(r for r in response.data if r["public_id"] == roomier_league.public_id)
 
         self.assertTrue(row["is_member"])
 
@@ -589,26 +647,60 @@ class PublicLeagueSearchAndFilterTests(APITestCase):
         names = [row["name"] for row in response.data]
         self.assertEqual(names, ["Friends & Family", "Office Sweepstake"])
 
-    def test_filter_vacant_excludes_full_leagues(self):
-        for n in range(3):
-            member = User.objects.create_user(username=f"filler{n}", email=f"filler{n}@example.com", password="pw12345678")
-            LeagueMembership.objects.create(league=self.friends_league, user=member)
+    def _fill_up(self, league):
+        for n in range(league.max_members - league.memberships.count()):
+            member = User.objects.create_user(
+                username=f"filler{league.pk}{n}", email=f"filler{league.pk}{n}@example.com", password="pw12345678"
+            )
+            LeagueMembership.objects.create(league=league, user=member)
+
+    def test_full_leagues_are_always_excluded_regardless_of_filter(self):
+        self._fill_up(self.friends_league)
         self.assertEqual(self.friends_league.memberships.count(), self.friends_league.max_members)
 
-        response = self.client.get(reverse("league-browse"), {"filter": "vacant"})
+        for filter_value in ("recent", "capacity_desc", "capacity_asc"):
+            response = self.client.get(reverse("league-browse"), {"filter": filter_value})
+            names = [row["name"] for row in response.data]
+            self.assertIn("Office Sweepstake", names)
+            self.assertNotIn("Friends & Family", names, f"filter={filter_value}")
 
-        names = [row["name"] for row in response.data]
-        self.assertIn("Office Sweepstake", names)
-        self.assertNotIn("Friends & Family", names)
+    def test_a_league_reappears_once_it_is_no_longer_full(self):
+        self._fill_up(self.friends_league)
+        member = self.friends_league.memberships.exclude(user=self.owner).first().user
 
-    def test_combining_search_and_vacant_filter(self):
-        response = self.client.get(reverse("league-browse"), {"search": "office", "filter": "vacant"})
+        response = self.client.get(reverse("league-browse"))
+        self.assertNotIn("Friends & Family", [row["name"] for row in response.data])
+
+        LeagueMembership.objects.filter(league=self.friends_league, user=member).delete()
+
+        response = self.client.get(reverse("league-browse"))
+        self.assertIn("Friends & Family", [row["name"] for row in response.data])
+
+    def test_combining_search_and_filter(self):
+        response = self.client.get(reverse("league-browse"), {"search": "office", "filter": "recent"})
 
         names = [row["name"] for row in response.data]
         self.assertEqual(names, ["Office Sweepstake"])
 
+    def test_filter_capacity_desc_orders_by_max_members_descending(self):
+        # office_league defaults to max_members=8, friends_league is 4.
+        response = self.client.get(reverse("league-browse"), {"filter": "capacity_desc"})
+
+        names = [row["name"] for row in response.data]
+        self.assertEqual(names, ["Office Sweepstake", "Friends & Family"])
+
+    def test_filter_capacity_asc_orders_by_max_members_ascending(self):
+        response = self.client.get(reverse("league-browse"), {"filter": "capacity_asc"})
+
+        names = [row["name"] for row in response.data]
+        self.assertEqual(names, ["Friends & Family", "Office Sweepstake"])
+
     def test_invalid_filter_value_returns_400(self):
         response = self.client.get(reverse("league-browse"), {"filter": "not-a-real-filter"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_vacant_is_no_longer_a_recognised_filter(self):
+        response = self.client.get(reverse("league-browse"), {"filter": "vacant"})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_browse_listing_never_exposes_who_created_the_league(self):

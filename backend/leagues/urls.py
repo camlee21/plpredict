@@ -6,6 +6,7 @@ from .views import (
     LeagueDetailView,
     LeagueHomeSummaryView,
     LeagueListCreateView,
+    LeaveLeagueView,
     PublicLeagueListView,
 )
 
@@ -16,4 +17,5 @@ urlpatterns = [
     path("home-summary/", LeagueHomeSummaryView.as_view(), name="league-home-summary"),
     path("<str:public_id>/", LeagueDetailView.as_view(), name="league-detail"),
     path("<str:public_id>/join/", JoinPublicLeagueView.as_view(), name="league-join-public"),
+    path("<str:public_id>/leave/", LeaveLeagueView.as_view(), name="league-leave"),
 ]
