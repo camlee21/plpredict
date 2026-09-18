@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { formatDate } from "../utils/format";
@@ -9,7 +9,8 @@ const USERNAME_MAX_LENGTH = 16;
 const MAX_LEAGUES = 10;
 
 export default function ProfilePage() {
-  const { user, setUser } = useAuth();
+  const { user, setUser, logout } = useAuth();
+  const navigate = useNavigate();
 
   const [stats, setStats] = useState(undefined);
   const [statsError, setStatsError] = useState("");
@@ -24,6 +25,9 @@ export default function ProfilePage() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const [passwordError, setPasswordError] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
+
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     Promise.all([apiRequest("/api/predictions/history/"), apiRequest("/api/leagues/")])
@@ -71,6 +75,25 @@ export default function ProfilePage() {
       setPasswordError(err.message);
     } finally {
       setPasswordSaving(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    const confirmed = window.confirm(
+      "Delete your account? This will permanently delete all your data - your predictions, " +
+        "any leagues you own, and your league memberships - and cannot be undone."
+    );
+    if (!confirmed) return;
+
+    setDeleteError("");
+    setDeleting(true);
+    try {
+      await apiRequest("/api/auth/me/", { method: "DELETE" });
+      logout();
+      navigate("/login", { state: { message: "Your account has been successfully deleted." } });
+    } catch (err) {
+      setDeleteError(err.message);
+      setDeleting(false);
     }
   };
 
@@ -166,6 +189,18 @@ export default function ProfilePage() {
           </button>
         </form>
       )}
+
+      <div className="card danger-zone">
+        <h2>Delete account</h2>
+        <p className="muted">
+          Permanently delete your account and all your data - predictions, leagues you own, and
+          league memberships. This cannot be undone.
+        </p>
+        {deleteError && <div className="error-banner">{deleteError}</div>}
+        <button type="button" className="danger" onClick={handleDeleteAccount} disabled={deleting}>
+          {deleting ? "Deleting..." : "Delete account"}
+        </button>
+      </div>
     </div>
   );
 }

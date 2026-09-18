@@ -1,5 +1,6 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import "./App.css";
+import Footer from "./components/Footer";
 import Navbar from "./components/Navbar";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider } from "./context/AuthContext";
@@ -10,6 +11,7 @@ import LeaguePage from "./pages/LeaguePage";
 import LeaguesPage from "./pages/LeaguesPage";
 import LoginPage from "./pages/LoginPage";
 import PredictionsPage from "./pages/PredictionsPage";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage";
 import ProfilePage from "./pages/ProfilePage";
 import RegisterPage from "./pages/RegisterPage";
 
@@ -21,6 +23,7 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route
             path="/"
             element={
@@ -76,6 +79,7 @@ function App() {
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        <Footer />
       </BrowserRouter>
     </AuthProvider>
   );

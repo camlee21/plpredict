@@ -27,6 +27,30 @@ body {
   padding: 14px 28px;
 }
 
+.site-footer {
+  text-align: center;
+  padding: 24px 20px 40px;
+}
+
+.site-footer a {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-decoration: underline;
+}
+
+.privacy-page .card + .card {
+  margin-top: 20px;
+}
+
+.privacy-page ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
+.privacy-page li {
+  margin-bottom: 6px;
+}
+
 .navbar .brand {
   font-weight: 800;
   font-size: 1.2rem;
@@ -165,6 +189,28 @@ button.secondary {
   padding: 8px 14px;
   border-radius: 8px;
   font-weight: 600;
+}
+
+button.danger {
+  background: white;
+  border: 1px solid #a5192b;
+  color: #a5192b;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+button.danger:hover:not(:disabled) {
+  background: #fdeaea;
+}
+
+button.danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.danger-zone {
+  border-color: #f4c2c8;
 }
 
 .divider {

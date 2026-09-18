@@ -143,6 +143,13 @@ class MeView(APIView):
         serializer.save()
         return Response(UserSerializer(request.user).data)
 
+    def delete(self, request):
+        # Cascades to the user's predictions, league memberships, and any
+        # leagues they own (which in turn removes other members' memberships
+        # in those leagues - there's no ownership transfer to fall back to).
+        request.user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class ChangePasswordView(APIView):
     permission_classes = [IsAuthenticated]

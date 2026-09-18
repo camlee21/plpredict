@@ -1,15 +1,17 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import GoogleSignInButton from "../components/GoogleSignInButton";
 import { useAuth } from "../context/AuthContext";
 
 export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [usernameOrEmail, setUsernameOrEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [notice] = useState(location.state?.message ?? "");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -29,6 +31,7 @@ export default function LoginPage() {
     <div className="auth-page">
       <form className="card auth-card" onSubmit={handleSubmit}>
         <h1>Welcome back</h1>
+        {notice && <div className="success-banner">{notice}</div>}
         {error && <div className="error-banner">{error}</div>}
         <label>
           Username or email

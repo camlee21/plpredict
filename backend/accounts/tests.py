@@ -3,8 +3,13 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
+
+from backend.fixtures.models import Fixture, Gameweek, Team
+from backend.leagues.models import League, LeagueMembership
+from backend.predictions.models import Prediction
 
 User = get_user_model()
 
@@ -389,4 +394,68 @@ class UserAdminTests(APITestCase):
         response = self.client.post(
             reverse("login"), {"username_or_email": "alice", "password": "pw12345678"}
         )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class DeleteAccountTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="alice", email="alice@example.com", password="OldPassword123")
+        self.client.force_authenticate(user=self.user)
+
+    def test_can_delete_own_account(self):
+        response = self.client.delete(reverse("me"))
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(pk=self.user.pk).exists())
+
+    def test_deleted_account_can_no_longer_log_in(self):
+        self.client.delete(reverse("me"))
+
+        response = self.client.post(
+            reverse("login"), {"username_or_email": "alice", "password": "OldPassword123"}
+        )
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_deleting_account_cascades_own_predictions_and_memberships(self):
+        other_owner = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        league = League.objects.create(name="Office League", owner=other_owner, is_public=True, max_members=8)
+        LeagueMembership.objects.create(league=league, user=other_owner)
+        LeagueMembership.objects.create(league=league, user=self.user)
+
+        home = Team.objects.create(external_id=1, name="Home FC")
+        away = Team.objects.create(external_id=2, name="Away FC")
+        gameweek = Gameweek.objects.create(number=1)
+        fixture = Fixture.objects.create(
+            external_id=1, gameweek=gameweek, home_team=home, away_team=away, kickoff_time=timezone.now(),
+        )
+        Prediction.objects.create(user=self.user, fixture=fixture, predicted_home_score=1, predicted_away_score=0)
+
+        response = self.client.delete(reverse("me"))
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Prediction.objects.filter(user_id=self.user.pk).exists())
+        self.assertFalse(LeagueMembership.objects.filter(user_id=self.user.pk).exists())
+        # The league itself, and bob's own membership in it, are untouched -
+        # alice was just a member, not the owner.
+        self.assertTrue(League.objects.filter(pk=league.pk).exists())
+        self.assertTrue(LeagueMembership.objects.filter(league=league, user=other_owner).exists())
+
+    def test_deleting_account_removes_leagues_they_own_and_other_members_memberships(self):
+        member = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        league = League.objects.create(name="Alice's League", owner=self.user, is_public=True, max_members=8)
+        LeagueMembership.objects.create(league=league, user=self.user)
+        LeagueMembership.objects.create(league=league, user=member)
+
+        response = self.client.delete(reverse("me"))
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(League.objects.filter(pk=league.pk).exists())
+        self.assertFalse(LeagueMembership.objects.filter(league_id=league.pk).exists())
+        # bob's account itself is untouched - only his membership in the
+        # now-deleted league went away.
+        self.assertTrue(User.objects.filter(pk=member.pk).exists())
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.delete(reverse("me"))
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
