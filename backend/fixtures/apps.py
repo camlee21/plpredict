@@ -7,6 +7,12 @@ from django.apps import AppConfig
 
 
 class FixturesConfig(AppConfig):
+    """Only keeps fixtures/scores fresh under `manage.py runserver` (local
+    dev) - gunicorn never triggers this `ready()` path with "runserver" in
+    sys.argv, so this is a no-op in production. Production relies on a
+    separate scheduled job (a Render Cron Job) running `sync_fixtures` and
+    `score_gameweeks` instead - see README.md's Deployment section."""
+
     name = 'backend.fixtures'
     label = 'fixtures'
 
