@@ -2,7 +2,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -428,3 +428,44 @@ class SyncFixturesCommandTests(TestCase):
         call_command("sync_fixtures")
 
         self.assertEqual(Fixture.objects.count(), 0)
+
+
+@override_settings(SYNC_TRIGGER_SECRET="test-secret")
+class SyncTriggerViewTests(APITestCase):
+    """The production stand-in for the local-dev auto-sync thread - hit by
+    a free external scheduler rather than a paid Render Cron Job."""
+
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_fixtures")
+    @patch("backend.fixtures.management.commands.sync_fixtures.FPLClient.get_bootstrap")
+    def test_correct_secret_triggers_a_sync(self, mock_bootstrap, mock_fixtures):
+        mock_bootstrap.return_value = _bootstrap()
+        mock_fixtures.return_value = [
+            {
+                "id": 555, "event": 1, "team_h": 1, "team_a": 2,
+                "kickoff_time": "2026-08-15T14:00:00Z",
+                "started": False, "finished": False,
+                "team_h_score": None, "team_a_score": None, "stats": [],
+            }
+        ]
+
+        response = self.client.post(reverse("sync-trigger"), HTTP_X_SYNC_SECRET="test-secret")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(Fixture.objects.count(), 1)
+
+    def test_wrong_secret_is_rejected(self):
+        response = self.client.post(reverse("sync-trigger"), HTTP_X_SYNC_SECRET="wrong")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_missing_secret_header_is_rejected(self):
+        response = self.client.post(reverse("sync-trigger"))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @override_settings(SYNC_TRIGGER_SECRET="")
+    def test_unconfigured_secret_always_rejects(self):
+        response = self.client.post(reverse("sync-trigger"), HTTP_X_SYNC_SECRET="anything")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_get_is_not_allowed(self):
+        response = self.client.get(reverse("sync-trigger"), HTTP_X_SYNC_SECRET="test-secret")
+        self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)

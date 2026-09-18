@@ -160,6 +160,12 @@ GAMEWEEK_FINALIZE_AFTER_LAST_KICKOFF = timedelta(hours=2, minutes=30)
 # API while the dev server is running (see backend/fixtures/apps.py). 0 disables it.
 AUTO_SYNC_INTERVAL_SECONDS = int(os.environ.get("AUTO_SYNC_INTERVAL_SECONDS", "300"))
 
+# Shared secret required (as the X-Sync-Secret header) to call
+# /api/fixtures/sync/trigger/ - the production equivalent of the dev-only
+# auto-sync thread above, meant to be hit by a free external scheduler.
+# Left blank, the endpoint always 404s.
+SYNC_TRIGGER_SECRET = os.environ.get("SYNC_TRIGGER_SECRET", "")
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/

@@ -1,8 +1,13 @@
+import hmac
+
+from django.conf import settings
+from django.core.management import call_command
 from django.db.models import Max, Min
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -60,3 +65,25 @@ class HomeGameweekView(APIView):
         if gameweek is None:
             return Response({"detail": "No gameweeks have been synced yet."}, status=404)
         return Response({"phase": phase, **GameweekDetailSerializer(gameweek).data})
+
+
+class SyncTriggerView(APIView):
+    """Pulls the latest fixtures/results and finalises any completed
+    gameweek - the production equivalent of the local-dev auto-sync thread
+    in backend/fixtures/apps.py. Meant to be hit every few minutes by a free
+    external scheduler (e.g. cron-job.org) rather than a paid Render Cron
+    Job. Requires the `X-Sync-Secret` header to match SYNC_TRIGGER_SECRET;
+    returns 404 (not 403) on any mismatch so the endpoint doesn't advertise
+    its own existence to anyone probing without the secret."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        secret = settings.SYNC_TRIGGER_SECRET
+        provided = request.headers.get("X-Sync-Secret", "")
+        if not secret or not hmac.compare_digest(secret, provided):
+            return Response(status=status.HTTP_404_NOT_FOUND)
+
+        call_command("sync_fixtures")
+        call_command("score_gameweeks")
+        return Response({"detail": "Synced."})
