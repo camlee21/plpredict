@@ -128,8 +128,8 @@ export default function LeaguesPage() {
           <label>
             Visibility
             <select value={isPublic ? "public" : "private"} onChange={(e) => setIsPublic(e.target.value === "public")}>
-              <option value="public">Public (listed for anyone to browse and join)</option>
-              <option value="private">Private (join by invite code only)</option>
+              <option value="public">Public (anyone can join)</option>
+              <option value="private">Private (invite code only)</option>
             </select>
           </label>
           <button className="primary" type="submit" disabled={busy}>

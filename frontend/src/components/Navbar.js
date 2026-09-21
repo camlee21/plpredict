@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
@@ -18,10 +18,14 @@ export default function Navbar() {
         PL Predict
       </Link>
       <div className="nav-links">
-        <Link to="/">Home</Link>
-        <Link to="/leagues">Leagues</Link>
-        <Link to="/fixtures">Fixtures</Link>
-        <Link to="/predict">Predict</Link>
+        <NavLink to="/" end>
+          Home
+        </NavLink>
+        <NavLink to="/leagues">Leagues</NavLink>
+        <NavLink to="/fixtures">Fixtures</NavLink>
+        <NavLink to="/predict">Predict</NavLink>
+      </div>
+      <div className="nav-account">
         <span className="nav-divider" aria-hidden="true" />
         <Link to="/profile" className="nav-user">
           {user.username}

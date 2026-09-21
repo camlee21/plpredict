@@ -36,10 +36,13 @@ export default function GoogleSignInButton({ onError }) {
           }
         },
       });
+      // Google renders a fixed-width iframe, so fit it to the card on narrow
+      // screens (GSI only accepts widths of 200-400px).
+      const available = divRef.current.clientWidth || 280;
       window.google.accounts.id.renderButton(divRef.current, {
         theme: "outline",
         size: "large",
-        width: 280,
+        width: Math.max(200, Math.min(280, available)),
       });
     };
     tryRender();
