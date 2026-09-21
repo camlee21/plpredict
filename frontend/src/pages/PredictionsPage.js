@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
+import GameweekScoreStrip from "../components/GameweekScoreStrip";
 import LoadingIndicator from "../components/LoadingIndicator";
 import ScoringInfo from "../components/ScoringInfo";
 import { formatDateTime } from "../utils/format";
+import { predictionFooter } from "../utils/scoring";
 
 function gameweekOptionLabel(gw) {
   return `Gameweek ${gw.number}${gw.lifecycle === "current" ? " (current)" : ""}`;
@@ -38,6 +40,8 @@ function useCountdown(deadline) {
 export default function PredictionsPage() {
   // null until the gameweek list has loaded (or failed to).
   const [gameweeks, setGameweeks] = useState(null);
+  const [history, setHistory] = useState(null);
+  const [historyError, setHistoryError] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [selected, setSelected] = useState(null);
   const [data, setData] = useState(null);
@@ -54,16 +58,26 @@ export default function PredictionsPage() {
     apiRequest("/api/fixtures/gameweeks/")
       .then(async (list) => {
         setGameweeks(list);
+        // Played-and-scored gameweeks live in the strip above, not the picker.
+        const upcoming = list.filter((gw) => gw.lifecycle !== "previous");
+        if (upcoming.length === 0) return;
         try {
           const current = await apiRequest("/api/fixtures/gameweeks/current/");
-          setSelected(current.number);
+          const isSelectable = upcoming.some((gw) => gw.number === current.number);
+          setSelected(isSelectable ? current.number : upcoming[0].number);
         } catch {
-          if (list.length) setSelected(list[0].number);
+          setSelected(upcoming[0].number);
         }
       })
       .catch((err) =>
         setLoadError(`Couldn't load the gameweeks: ${err.message}. Please refresh the page to try again.`)
       );
+
+    // Only feeds the score strip, so a failure here leaves the rest of the
+    // page working.
+    apiRequest("/api/predictions/history/")
+      .then(setHistory)
+      .catch(() => setHistoryError(true));
   }, []);
 
   useEffect(() => {
@@ -89,6 +103,27 @@ export default function PredictionsPage() {
   }, [selected]);
 
   const countdown = useCountdown(data?.deadline);
+
+  // The gameweeks still to come: what the picker offers. Anything already
+  // scored is reachable from the score strip instead.
+  const upcoming = useMemo(
+    () => (gameweeks ?? []).filter((gw) => gw.lifecycle !== "previous"),
+    [gameweeks]
+  );
+
+  // Every scored gameweek in season order - including ones with no
+  // predictions, so the run of gameweek numbers has no confusing gaps in it.
+  const pastScores = useMemo(() => {
+    if (!gameweeks || !history) return [];
+    const pointsByGameweek = new Map(history.by_gameweek.map((row) => [row.gameweek, row.points]));
+    return gameweeks
+      .filter((gw) => gw.lifecycle === "previous")
+      .map((gw) => ({
+        gameweek: gw.number,
+        points: pointsByGameweek.get(gw.number) ?? 0,
+        hasPredictions: pointsByGameweek.has(gw.number),
+      }));
+  }, [gameweeks, history]);
 
   const updateScore = (fixtureId, side, value) => {
     setScores((prev) => ({
@@ -150,12 +185,15 @@ export default function PredictionsPage() {
         <ScoringInfo />
       </div>
 
-      {gameweeks && gameweeks.length > 0 && (
+      {historyError && <p className="muted">Couldn't load your recent scores.</p>}
+      <GameweekScoreStrip items={pastScores} />
+
+      {upcoming.length > 0 && (
         <div className="gameweek-selector">
           <label>
             Gameweek
             <select value={selected ?? ""} onChange={(e) => setSelected(Number(e.target.value))}>
-              {gameweeks.map((gw) => (
+              {upcoming.map((gw) => (
                 <option key={gw.number} value={gw.number}>
                   {gameweekOptionLabel(gw)}
                 </option>
@@ -178,16 +216,32 @@ export default function PredictionsPage() {
         </p>
       )}
 
-      {gameweeks && gameweeks.length > 0 && !data && !error && (
-        <LoadingIndicator label="Loading gameweek..." />
+      {gameweeks && gameweeks.length > 0 && upcoming.length === 0 && (
+        <p className="muted">
+          Every gameweek has been played and scored - there's nothing left to predict this season.
+          Use the scores above to look back over how it went.
+        </p>
       )}
+
+      {upcoming.length > 0 && !data && !error && <LoadingIndicator label="Loading gameweek..." />}
 
       {data && data.is_locked && (
         <>
           <p className="muted">{LOCKED_MESSAGES[data.lifecycle]}</p>
           <div className="fixture-list">
             {data.fixtures.map((fixture) => (
-              <FixtureRow fixture={fixture} key={fixture.id} />
+              <FixtureRow
+                fixture={fixture}
+                key={fixture.id}
+                // Once a gameweek is locked, what you predicted is the point of
+                // the page - the bare result alone doesn't tell you how you did.
+                // A future gameweek you couldn't predict yet keeps its kickoff time.
+                footer={
+                  fixture.prediction || data.lifecycle !== "future"
+                    ? predictionFooter(fixture)
+                    : undefined
+                }
+              />
             ))}
           </div>
         </>

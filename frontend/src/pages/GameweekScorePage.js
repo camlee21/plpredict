@@ -28,8 +28,8 @@ export default function GameweekScorePage() {
 
   return (
     <div className="page">
-      <Link to="/" className="back-link">
-        &larr; Back to home
+      <Link to="/predict" className="back-link">
+        &larr; Back to predictions
       </Link>
       <div className="heading-row">
         <h1>Gameweek {number} score</h1>
@@ -42,7 +42,7 @@ export default function GameweekScorePage() {
 
       {data && !summary.hasPredictions && (
         <p className="muted">
-          No predictions submitted for this week. <Link to="/predict">Make predictions</Link>.
+          No predictions submitted for this week.
         </p>
       )}
 

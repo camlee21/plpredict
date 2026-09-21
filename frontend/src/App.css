@@ -712,6 +712,95 @@ button.danger-solid:disabled {
   color: var(--purple);
 }
 
+/* Predict page: a scrollable row of past gameweek scores. How many show at
+   once is set by --strip-visible, which the mobile block turns down. */
+.score-strip {
+  margin: 0 0 28px;
+}
+
+.score-strip > h2 {
+  margin: 0 0 12px;
+  font-size: 1rem;
+  color: var(--muted);
+}
+
+.score-strip-row {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.score-strip-arrow {
+  flex: none;
+  width: 36px;
+  padding: 0;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--purple);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.score-strip-arrow:hover:not(:disabled) {
+  border-color: var(--purple);
+}
+
+.score-strip-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.score-strip-track {
+  --strip-gap: 12px;
+  --strip-visible: 3;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: var(--strip-gap);
+  overflow-x: auto;
+  /* Proximity, not mandatory: mandatory snapping fights the mouse drag and
+     makes the track jump between cards instead of following the cursor. */
+  scroll-snap-type: x proximity;
+  /* Dragging with the mouse shouldn't select the card text. */
+  user-select: none;
+  -webkit-user-select: none;
+  scrollbar-width: none;
+}
+
+.score-strip-track::-webkit-scrollbar {
+  display: none;
+}
+
+.score-strip-track.is-dragging {
+  scroll-snap-type: none;
+  cursor: grabbing;
+}
+
+.score-strip-card {
+  flex: 0 0 calc((100% - (var(--strip-visible) - 1) * var(--strip-gap)) / var(--strip-visible));
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px 10px;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.score-strip-card:hover {
+  border-color: var(--purple);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.score-strip-points {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--purple);
+  line-height: 1.2;
+}
+
 .gameweek-selector {
   margin-bottom: 16px;
 }
@@ -983,6 +1072,20 @@ button.danger-solid:disabled {
   .gameweek-selector select {
     width: 100%;
     min-width: 0;
+  }
+
+  /* Two score cards at a time on phones, with slimmer arrows beside them. */
+  .score-strip-track {
+    --strip-visible: 2;
+  }
+
+  .score-strip-arrow {
+    width: 30px;
+    font-size: 1.4rem;
+  }
+
+  .score-strip-points {
+    font-size: 1.6rem;
   }
 
   .deadline-banner {
