@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { apiRequest } from "../api/client";
 
 const MAX_MEMBERS_OPTIONS = [4, 8, 16, 32, 64, 128];
 const LEAGUE_NAME_MAX_LENGTH = 32;
 
 export default function LeaguesPage() {
+  // Set by the league page after the owner deletes a league.
+  const [notice] = useState(useLocation().state?.message ?? "");
   const [leagues, setLeagues] = useState(null);
   const [publicLeagues, setPublicLeagues] = useState(null);
   const [error, setError] = useState("");
@@ -100,6 +102,7 @@ export default function LeaguesPage() {
   return (
     <div className="page">
       <h1>Leagues</h1>
+      {notice && <div className="success-banner">{notice}</div>}
       {error && <div className="error-banner">{error}</div>}
 
       <div className="league-actions">

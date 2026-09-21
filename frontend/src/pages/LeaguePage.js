@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
+import ConfirmDialog from "../components/ConfirmDialog";
 import ScoringInfo from "../components/ScoringInfo";
 import { useAuth } from "../context/AuthContext";
 
@@ -14,6 +15,9 @@ export default function LeaguePage() {
   const [copiedCode, setCopiedCode] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState("");
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -52,6 +56,23 @@ export default function LeaguePage() {
     } catch (err) {
       setLeaveError(err.message);
       setLeaving(false);
+    }
+  };
+
+  const cancelDelete = useCallback(() => {
+    setConfirmingDelete(false);
+    setDeleteError("");
+  }, []);
+
+  const handleDelete = async () => {
+    setDeleteError("");
+    setDeleting(true);
+    try {
+      await apiRequest(`/api/leagues/${publicId}/`, { method: "DELETE" });
+      navigate("/leagues", { state: { message: `"${league.name}" has been deleted.` } });
+    } catch (err) {
+      setDeleteError(err.message);
+      setDeleting(false);
     }
   };
 
@@ -112,6 +133,35 @@ export default function LeaguePage() {
             {leaving ? "Leaving..." : "Leave league"}
           </button>
         </div>
+      )}
+
+      {league.is_owner && (
+        <div className="league-leave-row">
+          <button className="danger" onClick={() => setConfirmingDelete(true)}>
+            Delete league
+          </button>
+        </div>
+      )}
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title={`Delete "${league.name}"?`}
+          confirmLabel="Delete league"
+          busyLabel="Deleting..."
+          busy={deleting}
+          error={deleteError}
+          onConfirm={handleDelete}
+          onCancel={cancelDelete}
+        >
+          <p>
+            This removes the league and its standings for all {league.member_count}{" "}
+            {league.member_count === 1 ? "member" : "members"}, and it can't be undone.
+          </p>
+          <p className="muted">
+            Nobody's predictions or points are lost - those belong to each player's account, not to
+            the league.
+          </p>
+        </ConfirmDialog>
       )}
 
       <div className="heading-row">

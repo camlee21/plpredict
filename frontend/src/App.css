@@ -338,6 +338,43 @@ button.danger:disabled {
   color: var(--text);
 }
 
+.confirm-modal {
+  max-width: 440px;
+}
+
+.confirm-body p {
+  margin: 12px 0 0;
+}
+
+.confirm-modal .error-banner {
+  margin-top: 16px;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+button.danger-solid {
+  background: #a5192b;
+  border: 1px solid #a5192b;
+  color: white;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 700;
+}
+
+button.danger-solid:hover:not(:disabled) {
+  background: #8a1424;
+}
+
+button.danger-solid:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .scoring-rules,
 .scoring-notes {
   margin: 0;
@@ -1040,6 +1077,16 @@ button.danger:disabled {
 
   .modal {
     padding: 16px 16px 20px;
+  }
+
+  /* Stack the confirm buttons full-width so both are easy thumb targets. */
+  .confirm-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirm-actions button {
+    width: 100%;
+    padding: 13px 16px;
   }
 
   .scoring-rule {

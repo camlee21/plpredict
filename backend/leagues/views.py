@@ -287,8 +287,9 @@ class JoinPublicLeagueView(APIView):
 
 class LeaveLeagueView(APIView):
     """Leave a league you're a member of. Owners can't leave their own
-    league - there's no ownership transfer or league deletion yet, so
-    letting them leave would strand the league without an owner."""
+    league - there's no ownership transfer, so letting them leave would
+    strand the league without an owner. They can delete it instead
+    (LeagueDetailView.delete)."""
 
     permission_classes = [IsAuthenticated]
 
@@ -317,6 +318,19 @@ class LeagueDetailView(APIView):
                 "standings": _standings(league),
             }
         )
+
+    def delete(self, request, public_id):
+        """Owner-only. Removes the league and, by cascade, its membership rows.
+        Predictions and points hang off the user and fixture, never the league,
+        so nobody loses any scoring history."""
+        league = get_object_or_404(League, public_id=public_id, memberships__user=request.user)
+        if league.owner_id != request.user.id:
+            return Response(
+                {"detail": "Only the league's creator can delete it."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        league.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 def _get_membership(request, public_id, user_id):

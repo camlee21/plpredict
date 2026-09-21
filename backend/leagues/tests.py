@@ -300,6 +300,82 @@ class LeaveLeagueTests(APITestCase):
         self.assertIn("Snug League", [row["name"] for row in response.data])
 
 
+class DeleteLeagueTests(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.member = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        self.outsider = User.objects.create_user(username="eve", email="eve@example.com", password="pw12345678")
+        self.league = League.objects.create(name="Office League", owner=self.owner, is_public=True, max_members=8)
+        LeagueMembership.objects.create(league=self.league, user=self.owner)
+        LeagueMembership.objects.create(league=self.league, user=self.member)
+        self.url = reverse("league-detail", args=[self.league.public_id])
+
+    def test_the_owner_can_delete_their_league(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.delete(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(League.objects.filter(pk=self.league.pk).exists())
+        self.assertFalse(LeagueMembership.objects.filter(league_id=self.league.pk).exists())
+
+    def test_a_plain_member_cannot_delete_the_league(self):
+        self.client.force_authenticate(user=self.member)
+        response = self.client.delete(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(League.objects.filter(pk=self.league.pk).exists())
+        self.assertTrue(LeagueMembership.objects.filter(league=self.league, user=self.member).exists())
+
+    def test_a_non_member_gets_a_404_and_the_league_survives(self):
+        self.client.force_authenticate(user=self.outsider)
+        response = self.client.delete(self.url)
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(League.objects.filter(pk=self.league.pk).exists())
+
+    def test_unknown_public_id_returns_404(self):
+        self.client.force_authenticate(user=self.owner)
+        response = self.client.delete(reverse("league-detail", args=["ZZZZZZZZ"]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_requires_authentication(self):
+        response = self.client.delete(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertTrue(League.objects.filter(pk=self.league.pk).exists())
+
+    def test_deleting_a_league_leaves_every_members_predictions_and_points_intact(self):
+        home = Team.objects.create(external_id=1, name="Home FC")
+        away = Team.objects.create(external_id=2, name="Away FC")
+        gameweek = Gameweek.objects.create(number=1, is_scored=True)
+        fixture = Fixture.objects.create(
+            external_id=1, gameweek=gameweek, home_team=home, away_team=away,
+            kickoff_time=timezone.now(), status=Fixture.Status.FINISHED, home_score=2, away_score=1,
+        )
+        for user in (self.owner, self.member):
+            Prediction.objects.create(
+                user=user, fixture=fixture, predicted_home_score=2, predicted_away_score=1, points=3
+            )
+
+        self.client.force_authenticate(user=self.owner)
+        self.assertEqual(self.client.delete(self.url).status_code, status.HTTP_204_NO_CONTENT)
+
+        self.assertEqual(Prediction.objects.count(), 2)
+        self.assertEqual(sum(Prediction.objects.values_list("points", flat=True)), 6)
+        self.assertTrue(User.objects.filter(pk=self.owner.pk).exists())
+        self.assertTrue(User.objects.filter(pk=self.member.pk).exists())
+
+    def test_other_leagues_are_untouched(self):
+        other = League.objects.create(name="Other League", owner=self.owner, is_public=False, max_members=8)
+        LeagueMembership.objects.create(league=other, user=self.owner)
+        LeagueMembership.objects.create(league=other, user=self.member)
+
+        self.client.force_authenticate(user=self.owner)
+        self.client.delete(self.url)
+
+        self.assertTrue(League.objects.filter(pk=other.pk).exists())
+        self.assertEqual(LeagueMembership.objects.filter(league=other).count(), 2)
+
+
 class PublicLeagueBrowseTests(APITestCase):
     def setUp(self):
         self.owner = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
