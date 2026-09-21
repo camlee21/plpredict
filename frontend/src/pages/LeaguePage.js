@@ -1,17 +1,28 @@
-import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
+import { api, blockingError, forgetLeague, useApi, usePrefetchOnIntent } from "../api/queries";
 import ConfirmDialog from "../components/ConfirmDialog";
 import ScoringInfo from "../components/ScoringInfo";
 import { useAuth } from "../context/AuthContext";
+
+// What the league endpoint answers with when you're not (or no longer) a member.
+const MEMBERS_ONLY_STATUSES = [401, 403, 404];
 
 export default function LeaguePage() {
   const { publicId } = useParams();
   const { user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
-  const [league, setLeague] = useState(null);
-  const [membersOnly, setMembersOnly] = useState(false);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
+  const prefetchOnIntent = usePrefetchOnIntent();
+  const query = useApi(api.league(publicId), { enabled: Boolean(user) });
+  const league = query.data ?? null;
+  // Checked even when there's a cached copy: if a re-check says you're no
+  // longer in this league (you were removed, or it was deleted), the old
+  // standings shouldn't keep showing.
+  const membersOnly = (!authLoading && !user) || MEMBERS_ONLY_STATUSES.includes(query.error?.status);
+  const error = blockingError(query, { ignoreStatus: MEMBERS_ONLY_STATUSES });
   const [copiedCode, setCopiedCode] = useState(false);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -19,25 +30,6 @@ export default function LeaguePage() {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-
-  useEffect(() => {
-    if (authLoading) return;
-
-    if (!user) {
-      setMembersOnly(true);
-      return;
-    }
-
-    apiRequest(`/api/leagues/${publicId}/`)
-      .then(setLeague)
-      .catch((err) => {
-        if (err.status === 401 || err.status === 403 || err.status === 404) {
-          setMembersOnly(true);
-        } else {
-          setError(err.message);
-        }
-      });
-  }, [publicId, user, authLoading]);
 
   const copyCode = () => {
     navigator.clipboard?.writeText(league.code);
@@ -56,6 +48,7 @@ export default function LeaguePage() {
     try {
       await apiRequest(`/api/leagues/${publicId}/leave/`, { method: "POST" });
       navigate("/leagues", { state: { message: `You left "${league.name}".` } });
+      forgetLeague(queryClient, publicId);
     } catch (err) {
       setLeaveError(err.message);
       setLeaving(false);
@@ -73,6 +66,7 @@ export default function LeaguePage() {
     try {
       await apiRequest(`/api/leagues/${publicId}/`, { method: "DELETE" });
       navigate("/leagues", { state: { message: `"${league.name}" has been deleted.` } });
+      forgetLeague(queryClient, publicId);
     } catch (err) {
       setDeleteError(err.message);
       setDeleting(false);
@@ -206,7 +200,12 @@ export default function LeaguePage() {
             <tr key={row.user_id}>
               <td>{row.rank_display}</td>
               <td>
-                <Link to={`/leagues/${publicId}/players/${row.user_id}`}>{row.username}</Link>
+                <Link
+                  to={`/leagues/${publicId}/players/${row.user_id}`}
+                  {...prefetchOnIntent(api.leagueMember(publicId, row.user_id))}
+                >
+                  {row.username}
+                </Link>
               </td>
               {/* A dash, not 0, until a gameweek has actually counted for
                   them - someone who just joined hasn't scored nothing, they

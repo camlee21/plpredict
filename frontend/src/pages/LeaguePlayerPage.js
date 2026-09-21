@@ -1,23 +1,15 @@
-import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { apiRequest } from "../api/client";
+import { api, blockingError, useApi, usePrefetchOnIntent } from "../api/queries";
 import LoadingIndicator from "../components/LoadingIndicator";
 import ScoringInfo from "../components/ScoringInfo";
 
 export default function LeaguePlayerPage() {
   const { publicId, userId } = useParams();
-  const [player, setPlayer] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setPlayer(null);
-    setError("");
-    apiRequest(`/api/leagues/${publicId}/members/${userId}/`)
-      .then(setPlayer)
-      .catch((err) =>
-        setError(err.status === 404 ? "That player isn't part of this league." : err.message)
-      );
-  }, [publicId, userId]);
+  const query = useApi(api.leagueMember(publicId, userId));
+  const prefetchOnIntent = usePrefetchOnIntent();
+  const player = query.data;
+  const error =
+    query.error?.status === 404 ? "That player isn't part of this league." : blockingError(query);
 
   if (error) {
     return (
@@ -104,6 +96,7 @@ export default function LeaguePlayerPage() {
                 <Link
                   to={`/leagues/${publicId}/players/${userId}/gameweek/${row.gameweek}`}
                   className="league-row-action"
+                  {...prefetchOnIntent(api.leagueMemberGameweek(publicId, userId, row.gameweek))}
                 >
                   View predictions
                 </Link>

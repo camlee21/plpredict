@@ -1,5 +1,7 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "../api/client";
+import { api, blockingError, queryKeys, useApi, usePrefetch, usePrefetchOnIntent } from "../api/queries";
 import { FixtureRow } from "../components/FixtureRow";
 import GameweekScoreStrip from "../components/GameweekScoreStrip";
 import LoadingIndicator from "../components/LoadingIndicator";
@@ -16,6 +18,18 @@ const LOCKED_MESSAGES = {
   current: "This gameweek is in progress - predictions closed an hour before its first kickoff.",
   future: "Predictions for this gameweek aren't open yet - the current gameweek needs to finish first.",
 };
+
+// The form's starting values: whatever's already saved for each fixture.
+function savedScores(gameweekData) {
+  const initial = {};
+  gameweekData.fixtures.forEach((f) => {
+    initial[f.id] = {
+      home: f.prediction?.predicted_home_score ?? "",
+      away: f.prediction?.predicted_away_score ?? "",
+    };
+  });
+  return initial;
+}
 
 function useCountdown(deadline) {
   const [now, setNow] = useState(Date.now());
@@ -38,15 +52,60 @@ function useCountdown(deadline) {
 }
 
 export default function PredictionsPage() {
+  const queryClient = useQueryClient();
+  const gameweeksQuery = useApi(api.gameweeks());
+  const currentQuery = useApi(api.currentGameweek());
+  // Only feeds the score strip, so a failure here leaves the rest of the
+  // page working.
+  const historyQuery = useApi(api.history());
+
   // null until the gameweek list has loaded (or failed to).
-  const [gameweeks, setGameweeks] = useState(null);
-  const [history, setHistory] = useState(null);
-  const [historyError, setHistoryError] = useState(false);
-  const [loadError, setLoadError] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [data, setData] = useState(null);
+  const gameweeks = gameweeksQuery.data ?? null;
+  const history = historyQuery.data ?? null;
+  const historyError = historyQuery.isError && !history;
+  const listError = blockingError(gameweeksQuery);
+  const loadError = listError
+    ? `Couldn't load the gameweeks: ${listError}. Please refresh the page to try again.`
+    : "";
+
+  // Played-and-scored gameweeks live in the strip above, not the picker. By
+  // default the picker shows the current gameweek.
+  const [picked, setPicked] = useState(null);
+  const defaultSelection = useMemo(() => {
+    const upcomingNumbers = (gameweeks ?? []).filter((gw) => gw.lifecycle !== "previous").map((gw) => gw.number);
+    if (upcomingNumbers.length === 0) return null;
+    if (currentQuery.data) {
+      return upcomingNumbers.includes(currentQuery.data.number) ? currentQuery.data.number : upcomingNumbers[0];
+    }
+    return currentQuery.isError ? upcomingNumbers[0] : null;
+  }, [gameweeks, currentQuery.data, currentQuery.isError]);
+  const selected = picked ?? defaultSelection;
+
+  const gameweekQuery = useApi(api.predictionsGameweek(selected), {
+    gameweek: selected,
+    enabled: selected != null,
+  });
+  const data = gameweekQuery.data ?? null;
+
+  // The next gameweek in the picker, ready before you pick it.
+  const upcomingNumbers = (gameweeks ?? []).filter((gw) => gw.lifecycle !== "previous").map((gw) => gw.number);
+  const nextNumber = upcomingNumbers[upcomingNumbers.indexOf(selected) + 1];
+  usePrefetch(selected != null && nextNumber != null ? [api.predictionsGameweek(nextNumber)] : []);
+  const prefetchOnIntent = usePrefetchOnIntent();
+
   const [scores, setScores] = useState({});
-  const [error, setError] = useState("");
+  // Which gameweek the form was last filled in from. The boxes are only reset
+  // from saved predictions when you move to a different gameweek - never when
+  // a background refresh brings the same one back, which would wipe whatever
+  // you were halfway through typing.
+  const [formGameweek, setFormGameweek] = useState(null);
+  if (data && data.gameweek !== formGameweek) {
+    setFormGameweek(data.gameweek);
+    setScores(savedScores(data));
+  }
+
+  const [actionError, setActionError] = useState("");
+  const error = actionError || blockingError(gameweekQuery);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
@@ -54,53 +113,13 @@ export default function PredictionsPage() {
 
   useEffect(() => () => clearTimeout(justSavedTimeout.current), []);
 
-  useEffect(() => {
-    apiRequest("/api/fixtures/gameweeks/")
-      .then(async (list) => {
-        setGameweeks(list);
-        // Played-and-scored gameweeks live in the strip above, not the picker.
-        const upcoming = list.filter((gw) => gw.lifecycle !== "previous");
-        if (upcoming.length === 0) return;
-        try {
-          const current = await apiRequest("/api/fixtures/gameweeks/current/");
-          const isSelectable = upcoming.some((gw) => gw.number === current.number);
-          setSelected(isSelectable ? current.number : upcoming[0].number);
-        } catch {
-          setSelected(upcoming[0].number);
-        }
-      })
-      .catch((err) =>
-        setLoadError(`Couldn't load the gameweeks: ${err.message}. Please refresh the page to try again.`)
-      );
-
-    // Only feeds the score strip, so a failure here leaves the rest of the
-    // page working.
-    apiRequest("/api/predictions/history/")
-      .then(setHistory)
-      .catch(() => setHistoryError(true));
-  }, []);
-
-  useEffect(() => {
-    if (selected == null) return;
-    setError("");
+  const setSelected = (number) => {
+    setPicked(number);
+    setActionError("");
     setMessage("");
-    setData(null);
     setJustSaved(false);
     clearTimeout(justSavedTimeout.current);
-    apiRequest(`/api/predictions/gameweek/${selected}/`)
-      .then((gwData) => {
-        setData(gwData);
-        const initial = {};
-        gwData.fixtures.forEach((f) => {
-          initial[f.id] = {
-            home: f.prediction?.predicted_home_score ?? "",
-            away: f.prediction?.predicted_away_score ?? "",
-          };
-        });
-        setScores(initial);
-      })
-      .catch((err) => setError(err.message));
-  }, [selected]);
+  };
 
   const countdown = useCountdown(data?.deadline);
 
@@ -154,10 +173,10 @@ export default function PredictionsPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError("");
+    setActionError("");
     setMessage("");
     if (missingCount > 0) {
-      setError(`Enter a score for every fixture before saving - ${missingCount} still need one.`);
+      setActionError(`Enter a score for every fixture before saving - ${missingCount} still need one.`);
       return;
     }
     setSaving(true);
@@ -166,13 +185,15 @@ export default function PredictionsPage() {
         method: "POST",
         body: { predictions: completePredictions },
       });
-      setData(updated);
+      // The response is the gameweek as now saved: put it straight into the
+      // cache, which the home page's "this gameweek" card also reads.
+      queryClient.setQueryData(queryKeys.predictionsGameweek(selected), updated);
       setMessage("All predictions saved!");
       setJustSaved(true);
       clearTimeout(justSavedTimeout.current);
       justSavedTimeout.current = setTimeout(() => setJustSaved(false), 1000);
     } catch (err) {
-      setError(err.message);
+      setActionError(err.message);
     } finally {
       setSaving(false);
     }
@@ -186,7 +207,10 @@ export default function PredictionsPage() {
       </div>
 
       {historyError && <p className="muted">Couldn't load your recent scores.</p>}
-      <GameweekScoreStrip items={pastScores} />
+      <GameweekScoreStrip
+        items={pastScores}
+        cardProps={(item) => prefetchOnIntent(api.predictionsGameweek(item.gameweek))}
+      />
 
       {upcoming.length > 0 && (
         <div className="gameweek-selector">

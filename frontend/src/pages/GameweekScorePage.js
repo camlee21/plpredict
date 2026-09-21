@@ -1,28 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
-import { apiRequest } from "../api/client";
+import { api, blockingError, useApi } from "../api/queries";
 import { FixtureRow } from "../components/FixtureRow";
 import ScoringInfo from "../components/ScoringInfo";
 import { gameweekScoreSummary, predictionFooter } from "../utils/scoring";
 
 export default function GameweekScorePage() {
   const { number } = useParams();
-  const [data, setData] = useState(undefined);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setData(undefined);
-    setError("");
-    apiRequest(`/api/predictions/gameweek/${number}/`)
-      .then(setData)
-      .catch((err) => {
-        if (err.status === 404) {
-          setData(null);
-        } else {
-          setError(err.message);
-        }
-      });
-  }, [number]);
+  const query = useApi(api.predictionsGameweek(number), {
+    gameweek: number,
+  });
+  // undefined while loading, null for a gameweek that doesn't exist.
+  const data = query.error?.status === 404 ? null : query.data;
+  const error = blockingError(query, { ignoreStatus: [404] });
 
   const summary = useMemo(() => gameweekScoreSummary(data), [data]);
 

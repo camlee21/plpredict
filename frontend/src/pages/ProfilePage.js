@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiRequest } from "../api/client";
+import { api, blockingError, queryKeys, useApi } from "../api/queries";
 import ConfirmDialog from "../components/ConfirmDialog";
 import { useAuth } from "../context/AuthContext";
 import { formatDate } from "../utils/format";
@@ -13,8 +15,20 @@ export default function ProfilePage() {
   const { user, setUser, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [stats, setStats] = useState(undefined);
-  const [statsError, setStatsError] = useState("");
+  const queryClient = useQueryClient();
+  // Shared with the Home, Predict and Leagues pages, so these are usually
+  // already cached by the time you get here.
+  const historyQuery = useApi(api.history());
+  const leaguesQuery = useApi(api.myLeagues());
+  const stats =
+    historyQuery.data && leaguesQuery.data
+      ? {
+          overallPoints: historyQuery.data.overall_total,
+          gameweeksPlayed: historyQuery.data.by_gameweek.length,
+          leagueCount: leaguesQuery.data.length,
+        }
+      : undefined;
+  const statsError = blockingError(historyQuery) || blockingError(leaguesQuery);
 
   const [username, setUsername] = useState(user.username);
   const [usernameSaving, setUsernameSaving] = useState(false);
@@ -31,18 +45,6 @@ export default function ProfilePage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
-  useEffect(() => {
-    Promise.all([apiRequest("/api/predictions/history/"), apiRequest("/api/leagues/")])
-      .then(([history, leagues]) => {
-        setStats({
-          overallPoints: history.overall_total,
-          gameweeksPlayed: history.by_gameweek.length,
-          leagueCount: leagues.length,
-        });
-      })
-      .catch((err) => setStatsError(err.message));
-  }, []);
-
   const handleUsernameSubmit = async (e) => {
     e.preventDefault();
     setUsernameError("");
@@ -52,6 +54,8 @@ export default function ProfilePage() {
       const updated = await apiRequest("/api/auth/me/", { method: "PATCH", body: { username } });
       setUser(updated);
       setUsername(updated.username);
+      // Your name appears in every league table you're in.
+      queryClient.invalidateQueries({ queryKey: queryKeys.leagues, refetchType: "all" });
       setUsernameMessage("Username updated!");
     } catch (err) {
       setUsernameError(err.message);
@@ -130,7 +134,7 @@ export default function ProfilePage() {
                 {stats.leagueCount}/{MAX_LEAGUES}
               </div>
               <div className="muted small">
-                <Link to="/leagues">Leagues joined</Link>
+                Leagues joined
               </div>
             </div>
           </div>

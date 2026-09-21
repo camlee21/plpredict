@@ -1,49 +1,36 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
-import { apiRequest } from "../api/client";
+import { api, blockingError, useApi, usePrefetchOnIntent } from "../api/queries";
 import { FixtureRow } from "../components/FixtureRow";
 import ScoringInfo from "../components/ScoringInfo";
 import { gameweekScoreSummary } from "../utils/scoring";
 
 export default function HomePage() {
-  const [lastScore, setLastScore] = useState(undefined);
-  const [leagueSummaries, setLeagueSummaries] = useState(null);
-  const [gwScore, setGwScore] = useState(undefined);
-  const [gameweek, setGameweek] = useState(undefined);
-  const [error, setError] = useState("");
+  const historyQuery = useApi(api.history());
+  const summariesQuery = useApi(api.homeSummary());
+  const currentQuery = useApi(api.currentGameweek());
+  const currentNumber = currentQuery.data?.number;
+  // Same cache entry as the Predict page's view of this gameweek, so saving
+  // predictions there shows up here straight away.
+  const gwScoreQuery = useApi(api.predictionsGameweek(currentNumber), {
+    gameweek: currentNumber,
+    enabled: currentNumber != null,
+  });
+  const homeQuery = useApi(api.homeGameweek());
+  const prefetchOnIntent = usePrefetchOnIntent();
 
-  useEffect(() => {
-    apiRequest("/api/predictions/history/")
-      .then((history) => {
-        const entries = history.by_gameweek;
-        setLastScore(entries.length ? entries[entries.length - 1] : null);
-      })
-      .catch((err) => setError(err.message));
-
-    apiRequest("/api/leagues/home-summary/")
-      .then(setLeagueSummaries)
-      .catch((err) => setError(err.message));
-
-    apiRequest("/api/fixtures/gameweeks/current/")
-      .then((current) => apiRequest(`/api/predictions/gameweek/${current.number}/`).then(setGwScore))
-      .catch((err) => {
-        if (err.status === 404) {
-          setGwScore(null);
-        } else {
-          setError(err.message);
-        }
-      });
-
-    apiRequest("/api/fixtures/gameweeks/home/")
-      .then(setGameweek)
-      .catch((err) => {
-        if (err.status === 404) {
-          setGameweek(null);
-        } else {
-          setError(err.message);
-        }
-      });
-  }, []);
+  // undefined = still loading, null = nothing to show.
+  const entries = historyQuery.data?.by_gameweek;
+  const lastScore = entries === undefined ? undefined : entries.length ? entries[entries.length - 1] : null;
+  const leagueSummaries = summariesQuery.data ?? null;
+  const gwScore = currentQuery.error?.status === 404 ? null : gwScoreQuery.data;
+  const gameweek = homeQuery.error?.status === 404 ? null : homeQuery.data;
+  const error =
+    blockingError(historyQuery) ||
+    blockingError(summariesQuery) ||
+    blockingError(currentQuery, { ignoreStatus: [404] }) ||
+    blockingError(gwScoreQuery) ||
+    blockingError(homeQuery, { ignoreStatus: [404] });
 
   const gwScoreSummary = useMemo(() => gameweekScoreSummary(gwScore), [gwScore]);
 
@@ -53,7 +40,11 @@ export default function HomePage() {
       {error && <div className="error-banner">{error}</div>}
 
       {lastScore && (
-        <Link to={`/scores/${lastScore.gameweek}`} className="card home-last-score home-last-score-link">
+        <Link
+          to={`/scores/${lastScore.gameweek}`}
+          className="card home-last-score home-last-score-link"
+          {...prefetchOnIntent(api.predictionsGameweek(lastScore.gameweek))}
+        >
           <h2>Your last score</h2>
           <p className="score-highlight">{lastScore.points} pts</p>
           <p className="muted">Gameweek {lastScore.gameweek}</p>
@@ -119,7 +110,11 @@ export default function HomePage() {
               <span className="league-row-detail muted">
                 {league.has_counted_gameweeks ? `${league.total_points} pts` : "-"}
               </span>
-              <Link to={`/leagues/${league.public_id}`} className="league-row-action">
+              <Link
+                to={`/leagues/${league.public_id}`}
+                className="league-row-action"
+                {...prefetchOnIntent(api.league(league.public_id))}
+              >
                 View league
               </Link>
             </div>
