@@ -1,22 +1,58 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { apiRequest, clearTokens, setTokens } from "../api/client";
+import { clearPersistedCache } from "../api/persist";
 
 const AuthContext = createContext(null);
 
+// The logged-in user's own profile, kept so a reload can show the app at once
+// instead of waiting on the server to confirm who you are first.
+const USER_KEY = "user";
+
+function readSavedUser() {
+  try {
+    const saved = localStorage.getItem(USER_KEY);
+    return saved && localStorage.getItem("access") ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveUser(user) {
+  try {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    else localStorage.removeItem(USER_KEY);
+  } catch {
+    // Storage unavailable: the app still works, it just checks on each load.
+  }
+}
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [initialUser] = useState(readSavedUser);
+  const [user, setUser] = useState(initialUser);
+  // With a saved profile there's nothing to wait for: pages render straight
+  // away (from the saved cache too) while the check below runs.
+  const [loading, setLoading] = useState(initialUser === null);
+  const queryClient = useQueryClient();
+
+  useEffect(() => saveUser(user), [user]);
 
   const loadMe = useCallback(async () => {
     try {
-      const me = await apiRequest("/api/auth/me/");
-      setUser(me);
-    } catch {
-      setUser(null);
+      setUser(await apiRequest("/api/auth/me/"));
+    } catch (err) {
+      // Only a definite "not logged in" ends the session. A network error or
+      // a server still waking up keeps the saved profile, so a slow server
+      // never logs anyone out.
+      if (err.status === 401 || err.status === 403 || !initialUser) {
+        queryClient.clear();
+        clearPersistedCache();
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [initialUser, queryClient]);
 
   useEffect(() => {
     if (localStorage.getItem("access")) {
@@ -26,7 +62,16 @@ export function AuthProvider({ children }) {
     }
   }, [loadMe]);
 
+  // Nearly everything cached belongs to one user, so a different person
+  // logging in on this browser must never see the last one's data - in
+  // memory or in the copy saved for reloads.
+  const forgetCachedData = () => {
+    queryClient.clear();
+    clearPersistedCache();
+  };
+
   const applyAuthResponse = (data) => {
+    forgetCachedData();
     setTokens({ access: data.access, refresh: data.refresh });
     setUser(data.user);
   };
@@ -59,6 +104,7 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    forgetCachedData();
     clearTokens();
     setUser(null);
   };

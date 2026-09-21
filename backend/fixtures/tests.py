@@ -2,7 +2,9 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
 from django.test import TestCase, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -15,6 +17,7 @@ from .models import (
     Team,
     next_open_gameweek_number,
     next_predictable_gameweek_number,
+    recent_form_by_team,
 )
 from .services import map_status, parse_kickoff
 
@@ -112,6 +115,26 @@ class TeamFormTests(TestCase):
             self._finished_fixture(i + 1, now - timedelta(days=7 * (7 - i)), self.team, self.opponent, 1, 0)
 
         self.assertEqual(len(self.team.recent_form()), 5)
+
+    def test_form_for_many_teams_comes_from_one_query_and_matches_each_teams_results(self):
+        now = timezone.now()
+        third = Team.objects.create(external_id=3, name="Third FC")
+        newcomer = Team.objects.create(external_id=4, name="Newcomer FC")
+        # Six older defeats for self.team, to push it past the five-game cap.
+        for i in range(4, 10):
+            self._finished_fixture(i, now - timedelta(days=30 + i), self.team, self.opponent, 0, 1)
+        self._finished_fixture(1, now - timedelta(days=21), self.team, self.opponent, 2, 0)
+        self._finished_fixture(2, now - timedelta(days=14), third, self.team, 1, 1)
+        self._finished_fixture(3, now - timedelta(days=7), self.opponent, third, 0, 3)
+
+        with self.assertNumQueries(1):
+            form = recent_form_by_team([self.team.id, self.opponent.id, third.id, newcomer.id])
+
+        self.assertEqual(form[self.team.id], ["L", "L", "L", "W", "D"])
+        self.assertEqual(form[self.opponent.id], ["W", "W", "W", "L", "L"])
+        self.assertEqual(form[third.id], ["D", "W"])
+        self.assertEqual(form[newcomer.id], [])
+        self.assertEqual(recent_form_by_team([]), {})
 
 
 class GameweekListViewTests(APITestCase):
@@ -503,3 +526,80 @@ class SyncTriggerViewTests(APITestCase):
     def test_get_is_not_allowed(self):
         response = self.client.get(reverse("sync-trigger"), HTTP_X_SYNC_SECRET="test-secret")
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+
+class QueryCountTests(APITestCase):
+    """Each list endpoint should cost a fixed number of queries, not one (or
+    more) per row - on a remote database every query is a round trip. These
+    compare a small and a large case rather than pinning exact numbers."""
+
+    def setUp(self):
+        user = get_user_model().objects.create_user(username="counter", email="c@example.com", password="pw12345678")
+        self.client.force_authenticate(user)
+        self.teams = [Team.objects.create(external_id=i, name=f"Team {i}") for i in range(1, 21)]
+        self.start = timezone.now() - timedelta(days=60)
+
+    def _gameweek(self, number, fixtures=10):
+        gameweek = Gameweek.objects.create(number=number, deadline=self.start, is_scored=True)
+        for i in range(fixtures):
+            Fixture.objects.create(
+                external_id=number * 100 + i, gameweek=gameweek,
+                home_team=self.teams[2 * i], away_team=self.teams[2 * i + 1],
+                kickoff_time=self.start + timedelta(days=number),
+                status=Fixture.Status.FINISHED, home_score=1, away_score=0,
+            )
+        return gameweek
+
+    def _queries(self, url):
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return len(queries)
+
+    def test_the_gameweek_list_costs_the_same_however_many_gameweeks_there_are(self):
+        self._gameweek(1)
+        with_one = self._queries(reverse("gameweek-list"))
+        for number in range(2, 12):
+            self._gameweek(number)
+        self.assertEqual(self._queries(reverse("gameweek-list")), with_one)
+
+    def test_a_gameweeks_fixtures_cost_the_same_however_many_teams_play(self):
+        self._gameweek(1, fixtures=1)
+        self._gameweek(2, fixtures=10)
+        self.assertEqual(
+            self._queries(reverse("gameweek-detail", args=[2])),
+            self._queries(reverse("gameweek-detail", args=[1])),
+        )
+
+    def test_your_predictions_for_a_gameweek_cost_the_same_however_many_teams_play(self):
+        self._gameweek(1, fixtures=1)
+        self._gameweek(2, fixtures=10)
+        self.assertEqual(
+            self._queries(reverse("gameweek-predictions", args=[2])),
+            self._queries(reverse("gameweek-predictions", args=[1])),
+        )
+
+    def test_the_gameweek_list_is_in_gameweek_order_however_they_were_created(self):
+        for number in (5, 2, 9, 1):
+            self._gameweek(number, fixtures=1)
+        response = self.client.get(reverse("gameweek-list"))
+        self.assertEqual([gw["number"] for gw in response.data], [1, 2, 5, 9])
+
+    def test_the_gameweek_list_query_asks_the_database_for_gameweek_order(self):
+        """Counting fixtures groups the query, and Django drops a model's
+        default ordering from grouped queries - so the ORDER BY has to be
+        explicit. SQLite happens to hand grouped rows back sorted anyway, which
+        is why the test above can't catch this on its own: Postgres, in
+        production, does not."""
+        from .views import GameweekListView
+
+        sql = str(GameweekListView.queryset.query)
+        self.assertIn("GROUP BY", sql)
+        self.assertRegex(sql, r'ORDER BY [^)]*"fixtures_gameweek"\."number" ASC')
+
+    def test_fixture_counts_in_the_gameweek_list_are_still_right(self):
+        self._gameweek(1, fixtures=3)
+        self._gameweek(2, fixtures=10)
+        Gameweek.objects.create(number=3)
+        response = self.client.get(reverse("gameweek-list"))
+        self.assertEqual([gw["fixture_count"] for gw in response.data], [3, 10, 0])

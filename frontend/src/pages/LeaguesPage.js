@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { apiRequest } from "../api/client";
+import { BROWSE_STALE_TIME } from "../api/freshness";
+import { api, blockingError, queryKeys, useApi, usePrefetchOnIntent } from "../api/queries";
 
 const MAX_MEMBERS_OPTIONS = [4, 8, 16, 32, 64, 128];
 const LEAGUE_NAME_MAX_LENGTH = 32;
@@ -8,9 +11,9 @@ const LEAGUE_NAME_MAX_LENGTH = 32;
 export default function LeaguesPage() {
   // Set by the league page after you leave or delete a league.
   const [notice] = useState(useLocation().state?.message ?? "");
-  const [leagues, setLeagues] = useState(null);
-  const [publicLeagues, setPublicLeagues] = useState(null);
-  const [error, setError] = useState("");
+  const queryClient = useQueryClient();
+  const prefetchOnIntent = usePrefetchOnIntent();
+  const [actionError, setActionError] = useState("");
   const [newLeagueName, setNewLeagueName] = useState("");
   const [isPublic, setIsPublic] = useState(true);
   const [maxMembers, setMaxMembers] = useState(8);
@@ -20,40 +23,34 @@ export default function LeaguesPage() {
 
   const [search, setSearch] = useState("");
   const [browseFilter, setBrowseFilter] = useState("recent");
-
-  const loadMyLeagues = useCallback(async () => {
-    try {
-      setLeagues(await apiRequest("/api/leagues/"));
-    } catch (err) {
-      setError(err.message);
-    }
-  }, []);
-
-  const loadPublicLeagues = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (search) params.set("search", search);
-    params.set("filter", browseFilter);
-    const query = params.toString();
-
-    try {
-      setPublicLeagues(await apiRequest(`/api/leagues/browse/${query ? `?${query}` : ""}`));
-    } catch (err) {
-      setError(err.message);
-    }
-  }, [search, browseFilter]);
-
+  // Wait for a pause in typing before searching, rather than on every key.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   useEffect(() => {
-    loadMyLeagues();
-  }, [loadMyLeagues]);
-
-  useEffect(() => {
-    const timeout = setTimeout(loadPublicLeagues, 300);
+    const timeout = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timeout);
-  }, [loadPublicLeagues]);
+  }, [search]);
+
+  const myLeaguesQuery = useApi(api.myLeagues());
+  const browseQuery = useApi(
+    api.browseLeagues(debouncedSearch, browseFilter),
+    // Keep the current results up while a new search loads, instead of
+    // blanking the list on every keystroke.
+    { staleTime: BROWSE_STALE_TIME, placeholderData: keepPreviousData }
+  );
+
+  const leagues = myLeaguesQuery.data ?? null;
+  const publicLeagues = browseQuery.data ?? null;
+  const error = actionError || blockingError(myLeaguesQuery) || blockingError(browseQuery);
+
+  // Creating or joining changes your league list, the browse list's member
+  // counts and the home page summary - refresh all of them, including the
+  // ones for pages you're not on, so none of them shows the old state later.
+  const refreshLeagues = () =>
+    queryClient.invalidateQueries({ queryKey: queryKeys.leagues, refetchType: "all" });
 
   const handleCreate = async (e) => {
     e.preventDefault();
-    setError("");
+    setActionError("");
     setBusy(true);
     try {
       await apiRequest("/api/leagues/", {
@@ -63,9 +60,9 @@ export default function LeaguesPage() {
       setNewLeagueName("");
       setIsPublic(true);
       setMaxMembers(8);
-      await Promise.all([loadMyLeagues(), loadPublicLeagues()]);
+      await refreshLeagues();
     } catch (err) {
-      setError(err.message);
+      setActionError(err.message);
     } finally {
       setBusy(false);
     }
@@ -73,27 +70,27 @@ export default function LeaguesPage() {
 
   const handleJoin = async (e) => {
     e.preventDefault();
-    setError("");
+    setActionError("");
     setBusy(true);
     try {
       await apiRequest("/api/leagues/join/", { method: "POST", body: { code: joinCode } });
       setJoinCode("");
-      await Promise.all([loadMyLeagues(), loadPublicLeagues()]);
+      await refreshLeagues();
     } catch (err) {
-      setError(err.message);
+      setActionError(err.message);
     } finally {
       setBusy(false);
     }
   };
 
   const handleJoinPublic = async (publicId) => {
-    setError("");
+    setActionError("");
     setJoiningId(publicId);
     try {
       await apiRequest(`/api/leagues/${publicId}/join/`, { method: "POST" });
-      await Promise.all([loadMyLeagues(), loadPublicLeagues()]);
+      await refreshLeagues();
     } catch (err) {
-      setError(err.message);
+      setActionError(err.message);
     } finally {
       setJoiningId(null);
     }
@@ -171,7 +168,11 @@ export default function LeaguesPage() {
                 {league.member_count}/{league.max_members}
               </span>
               <span className="league-row-detail muted">{league.rank_display}</span>
-              <Link to={`/leagues/${league.public_id}`} className="league-row-action">
+              <Link
+                to={`/leagues/${league.public_id}`}
+                className="league-row-action"
+                {...prefetchOnIntent(api.league(league.public_id))}
+              >
                 View league
               </Link>
             </div>
@@ -215,7 +216,11 @@ export default function LeaguesPage() {
                 {league.starting_gameweek ? `GW${league.starting_gameweek}` : "-"}
               </span>
               {league.is_member ? (
-                <Link to={`/leagues/${league.public_id}`} className="league-row-action">
+                <Link
+                  to={`/leagues/${league.public_id}`}
+                  className="league-row-action"
+                  {...prefetchOnIntent(api.league(league.public_id))}
+                >
                   View league
                 </Link>
               ) : (

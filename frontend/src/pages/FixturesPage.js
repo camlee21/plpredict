@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { apiRequest } from "../api/client";
+import { useState } from "react";
+import { api, blockingError, useApi, usePrefetch } from "../api/queries";
 import { FixtureRow } from "../components/FixtureRow";
 import LoadingIndicator from "../components/LoadingIndicator";
 
@@ -8,37 +8,35 @@ function gameweekOptionLabel(gw) {
 }
 
 export default function FixturesPage() {
+  const gameweeksQuery = useApi(api.gameweeks());
+  const homeQuery = useApi(api.homeGameweek());
   // null until the gameweek list has loaded (or failed to).
-  const [gameweeks, setGameweeks] = useState(null);
-  const [loadError, setLoadError] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
+  const gameweeks = gameweeksQuery.data ?? null;
+  const listError = blockingError(gameweeksQuery);
+  const loadError = listError
+    ? `Couldn't load the gameweeks: ${listError}. Please refresh the page to try again.`
+    : "";
 
-  useEffect(() => {
-    apiRequest("/api/fixtures/gameweeks/")
-      .then(async (list) => {
-        setGameweeks(list);
-        try {
-          const current = await apiRequest("/api/fixtures/gameweeks/home/");
-          setSelected(current.number);
-        } catch {
-          if (list.length) setSelected(list[list.length - 1].number);
-        }
-      })
-      .catch((err) =>
-        setLoadError(`Couldn't load the gameweeks: ${err.message}. Please refresh the page to try again.`)
-      );
-  }, []);
+  // What you've picked, else the gameweek the home page would show (the one
+  // being played, or the next one up), else the last one.
+  const [picked, setPicked] = useState(null);
+  const fallback = homeQuery.isError ? gameweeks?.[gameweeks.length - 1]?.number ?? null : null;
+  const selected = picked ?? homeQuery.data?.number ?? fallback;
 
-  useEffect(() => {
-    if (selected == null) return;
-    setError("");
-    setData(null);
-    apiRequest(`/api/fixtures/gameweeks/${selected}/`)
-      .then(setData)
-      .catch((err) => setError(err.message));
-  }, [selected]);
+  const detailQuery = useApi(api.gameweekDetail(selected), {
+    gameweek: selected,
+    enabled: selected != null,
+  });
+  const data = detailQuery.data ?? null;
+  const error = blockingError(detailQuery);
+
+  // The gameweeks either side, so stepping back or forward is instant.
+  const numbers = new Set((gameweeks ?? []).map((gw) => gw.number));
+  usePrefetch(
+    selected == null
+      ? []
+      : [selected - 1, selected + 1].filter((n) => numbers.has(n)).map((n) => api.gameweekDetail(n))
+  );
 
   return (
     <div className="page">
@@ -48,7 +46,7 @@ export default function FixturesPage() {
         <div className="gameweek-selector">
           <label>
             Gameweek
-            <select value={selected ?? ""} onChange={(e) => setSelected(Number(e.target.value))}>
+            <select value={selected ?? ""} onChange={(e) => setPicked(Number(e.target.value))}>
               {gameweeks.map((gw) => (
                 <option key={gw.number} value={gw.number}>
                   {gameweekOptionLabel(gw)}

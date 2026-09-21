@@ -114,16 +114,26 @@ def _counts_towards(membership, gameweek_number):
     return membership.starting_gameweek is None or gameweek_number >= membership.starting_gameweek
 
 
-def _standings(league):
-    """Ranked standings rows for `league`. Each member's points only count
-    from the gameweek they joined from, so joining a league never carries
-    points earned beforehand into it.
+def _standings_by_league(leagues):
+    """{league id: ranked standings rows} for any number of leagues at once.
+    Each member's points only count from the gameweek they joined from, so
+    joining a league never carries points earned beforehand into it.
+
+    Everything that doesn't depend on the league - which gameweeks are scored,
+    the current gameweek and its live points - is worked out once, and every
+    member's points come from one query across all the leagues, so listing
+    ten leagues costs the same handful of queries as showing one.
 
     Rows carry `has_counted_gameweeks`/`current_gameweek_counts` alongside the
     numbers so a member who joined too recently for either to mean anything
     yet can be shown as "-" rather than a misleading 0."""
-    memberships = list(league.memberships.select_related("user"))
-    member_ids = [membership.user_id for membership in memberships]
+    leagues = list(leagues)
+    if not leagues:
+        return {}
+    memberships = list(
+        LeagueMembership.objects.filter(league__in=leagues).select_related("user").order_by("pk")
+    )
+    member_ids = {membership.user_id for membership in memberships}
     scored_points = _scored_points_by_gameweek(member_ids)
     scored_numbers = set(Gameweek.objects.filter(is_scored=True).values_list("number", flat=True))
     current_gameweek = current_gameweek_number()
@@ -132,11 +142,11 @@ def _standings(league):
     # column reads "-" for everyone until it has.
     current_started = _has_started(_first_kickoffs([current_gameweek]).get(current_gameweek))
 
-    rows = []
+    rows_by_league = {league.id: [] for league in leagues}
     for membership in memberships:
         mine = scored_points.get(membership.user_id, {})
         counts_current = _counts_towards(membership, current_gameweek)
-        rows.append(
+        rows_by_league[membership.league_id].append(
             {
                 "user_id": membership.user_id,
                 "username": membership.user.username,
@@ -154,13 +164,32 @@ def _standings(league):
                 "current_gameweek_counts": counts_current and current_started,
             }
         )
-    return _rank_by_points(rows)
+    return {league_id: _rank_by_points(rows) for league_id, rows in rows_by_league.items()}
 
 
-def _my_standing(league, user_id):
-    """The requesting user's rank/points within `league`, using the same
-    standard-competition ranking as the full standings table."""
-    return next(row for row in _standings(league) if row["user_id"] == user_id)
+def _standings(league):
+    """Ranked standings rows for one league (see _standings_by_league)."""
+    return _standings_by_league([league])[league.id]
+
+
+def _my_standings(leagues, user_id):
+    """{league id: the user's own standings row} across several leagues."""
+    return {
+        league_id: next(row for row in rows if row["user_id"] == user_id)
+        for league_id, rows in _standings_by_league(leagues).items()
+    }
+
+
+def _leagues_of(user):
+    """The leagues `user` belongs to, with member counts and owners loaded in
+    the same query. Membership is matched by id rather than by filtering on
+    memberships directly, which would make the member count only count the
+    user's own membership."""
+    return (
+        League.objects.filter(id__in=LeagueMembership.objects.filter(user=user).values("league_id"))
+        .select_related("owner")
+        .annotate(member_total=Count("memberships"))
+    )
 
 
 def _join_league(user, league):
@@ -187,10 +216,11 @@ class LeagueListCreateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        leagues = League.objects.filter(memberships__user=request.user).order_by("-created_at")
+        leagues = list(_leagues_of(request.user).order_by("-created_at"))
+        my_standings = _my_standings(leagues, request.user.id)
         data = []
         for league in leagues:
-            mine = _my_standing(league, request.user.id)
+            mine = my_standings[league.id]
             data.append(
                 {
                     **LeagueSerializer(league).data,
@@ -254,7 +284,10 @@ class PublicLeagueListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer = PublicLeagueSerializer(leagues, many=True, context={"request": request})
+        my_league_ids = set(LeagueMembership.objects.filter(user=request.user).values_list("league_id", flat=True))
+        serializer = PublicLeagueSerializer(
+            leagues, many=True, context={"request": request, "my_league_ids": my_league_ids}
+        )
         return Response(serializer.data)
 
 
@@ -308,7 +341,7 @@ class LeagueDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, public_id):
-        league = get_object_or_404(League, public_id=public_id, memberships__user=request.user)
+        league = get_object_or_404(_leagues_of(request.user), public_id=public_id)
 
         return Response(
             {
@@ -475,14 +508,16 @@ class LeagueHomeSummaryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        leagues = list(_leagues_of(request.user).order_by("pk"))
+        my_standings = _my_standings(leagues, request.user.id)
         summaries = []
-        for league in League.objects.filter(memberships__user=request.user):
-            mine = _my_standing(league, request.user.id)
+        for league in leagues:
+            mine = my_standings[league.id]
             summaries.append(
                 {
                     "public_id": league.public_id,
                     "name": league.name,
-                    "member_count": league.memberships.count(),
+                    "member_count": league.member_total,
                     "total_points": mine["total_points"],
                     "has_counted_gameweeks": mine["has_counted_gameweeks"],
                     "rank": mine["rank"],

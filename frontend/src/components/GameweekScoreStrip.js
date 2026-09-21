@@ -18,7 +18,7 @@ const prefersReducedMotion = () =>
  * screen (native scrolling - we deliberately don't intercept it), or with the
  * arrows on either side. Each card links to that gameweek's score breakdown.
  */
-export default function GameweekScoreStrip({ items, heading = "Recent scores" }) {
+export default function GameweekScoreStrip({ items, heading = "Recent scores", cardProps }) {
   const trackRef = useRef(null);
   const [atStart, setAtStart] = useState(true);
   const [atEnd, setAtEnd] = useState(true);
@@ -151,6 +151,8 @@ export default function GameweekScoreStrip({ items, heading = "Recent scores" })
               key={item.gameweek}
               to={`/scores/${item.gameweek}`}
               className="score-strip-card card"
+              // e.g. handlers that prefetch the gameweek before it's opened.
+              {...cardProps?.(item)}
               // Without this the browser starts a native link drag, which
               // would cancel the scroll drag half way through.
               draggable={false}

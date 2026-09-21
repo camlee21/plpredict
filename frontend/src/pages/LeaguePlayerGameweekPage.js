@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { apiRequest } from "../api/client";
+import { api, blockingError, useApi } from "../api/queries";
 import { FixtureRow } from "../components/FixtureRow";
 import LoadingIndicator from "../components/LoadingIndicator";
 import ScoringInfo from "../components/ScoringInfo";
@@ -8,18 +7,10 @@ import { predictionFooter } from "../utils/scoring";
 
 export default function LeaguePlayerGameweekPage() {
   const { publicId, userId, number } = useParams();
-  const [data, setData] = useState(null);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setData(null);
-    setError("");
-    apiRequest(`/api/leagues/${publicId}/members/${userId}/gameweek/${number}/`)
-      .then(setData)
-      .catch((err) =>
-        setError(err.status === 404 ? "That gameweek isn't part of this league." : err.message)
-      );
-  }, [publicId, userId, number]);
+  const query = useApi(api.leagueMemberGameweek(publicId, userId, number), { gameweek: number });
+  const data = query.data;
+  const error =
+    query.error?.status === 404 ? "That gameweek isn't part of this league." : blockingError(query);
 
   const backToPlayer = (
     <Link to={`/leagues/${publicId}/players/${userId}`} className="back-link">

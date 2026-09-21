@@ -17,6 +17,10 @@ Locally, `backend/fixtures/apps.py` starts a background thread under `manage.py 
 3. That view (`SyncTriggerView` in `backend/fixtures/views.py`) checks the header against `SYNC_TRIGGER_SECRET` (404s on any mismatch) and, if it matches, runs `sync_fixtures` then `score_gameweeks`.
 4. The `--timeout 120` on the Gunicorn start command matters here: those two commands run synchronously inside the request, and Gunicorn's *default* 30s worker timeout is easily exceeded on Render's free-tier CPU, silently killing the worker mid-sync and rolling back the whole `@transaction.atomic` sync before anything is saved.
 
+The cron job is the only thing that pulls new fixtures and results, so its interval is the limit on how fresh the app can be. It also keeps the free Render instance awake: Render spins a free service down after 15 minutes without traffic, so keep the schedule under that.
+
+The frontend caches API responses with TanStack Query and re-checks them on a schedule that follows the gameweek calendar. Between gameweeks it re-checks at most every 15 minutes. While a gameweek is live (from its deadline until it's scored), whatever is on screen is polled every minute, only while the tab is visible. All the timings are in `frontend/src/api/freshness.js`. The cache is also saved in the browser (`frontend/src/api/persist.js`), so reloads and new tabs open with the last data while it's re-checked. When you log in or out, everything saved is wiped, and each Vercel deploy starts with an empty cache. Once you're logged in, the main pages' data is fetched in the background (`warmCache`), and links fetch their page's data as soon as you hover over or touch them. If you change the cron interval, keep `LIVE_POLL_INTERVAL` roughly in line with it, because polling much faster than the sync runs gains nothing.
+
 ## Available Scripts
 
 In the project directory, you can run:

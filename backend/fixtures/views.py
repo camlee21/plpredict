@@ -2,7 +2,7 @@ import hmac
 
 from django.conf import settings
 from django.core.management import call_command
-from django.db.models import Max, Min
+from django.db.models import Count, Max, Min
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -18,7 +18,10 @@ from .serializers import GameweekDetailSerializer, GameweekSerializer
 class GameweekListView(ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = GameweekSerializer
-    queryset = Gameweek.objects.all()
+    # Grouping (for the count) makes Django ignore the model's default ordering,
+    # so without an explicit order_by the database returns gameweeks in no
+    # particular order - and Postgres really does.
+    queryset = Gameweek.objects.annotate(fixture_total=Count("matches")).order_by("number")
 
 
 class GameweekDetailView(RetrieveAPIView):

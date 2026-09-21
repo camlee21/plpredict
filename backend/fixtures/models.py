@@ -17,29 +17,39 @@ class Team(models.Model):
     def recent_form(self, limit=FORM_LENGTH):
         """The team's last `limit` results as a list of "W"/"D"/"L",
         oldest first, based on finished fixtures up to now."""
-        fixtures = (
-            Fixture.objects.filter(
-                models.Q(home_team=self) | models.Q(away_team=self),
-                status=Fixture.Status.FINISHED,
-                home_score__isnull=False,
-                away_score__isnull=False,
-            )
-            .order_by("-kickoff_time")[:limit]
+        return recent_form_by_team([self.id], limit)[self.id]
+
+
+def recent_form_by_team(team_ids, limit=FORM_LENGTH):
+    """{team id: recent_form} for many teams in a single query. A fixture list
+    shows form for every team in it, and asking per team costs a database
+    round trip each - twenty of them for a full gameweek."""
+    form = {team_id: [] for team_id in team_ids}
+    if not form:
+        return {}
+    finished = (
+        Fixture.objects.filter(
+            models.Q(home_team_id__in=form) | models.Q(away_team_id__in=form),
+            status=Fixture.Status.FINISHED,
+            home_score__isnull=False,
+            away_score__isnull=False,
         )
-        results = []
-        for fixture in fixtures:
-            if fixture.home_team_id == self.id:
-                goals_for, goals_against = fixture.home_score, fixture.away_score
-            else:
-                goals_for, goals_against = fixture.away_score, fixture.home_score
+        .order_by("-kickoff_time")
+        .values_list("home_team_id", "away_team_id", "home_score", "away_score")
+    )
+    for home_id, away_id, home_score, away_score in finished:
+        for team_id, goals_for, goals_against in ((home_id, home_score, away_score), (away_id, away_score, home_score)):
+            results = form.get(team_id)
+            if results is None or len(results) >= limit:
+                continue
             if goals_for > goals_against:
                 results.append("W")
             elif goals_for < goals_against:
                 results.append("L")
             else:
                 results.append("D")
-        results.reverse()
-        return results
+    # Collected newest first; shown oldest first.
+    return {team_id: results[::-1] for team_id, results in form.items()}
 
 
 class Player(models.Model):

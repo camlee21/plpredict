@@ -2,6 +2,8 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -1242,3 +1244,69 @@ class LeagueMemberRecordTests(APITestCase):
     def test_unknown_gameweek_is_a_404(self):
         response = self._gameweek_view(self.alice, self.alice, 99)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class LeagueQueryCountTests(APITestCase):
+    """Listing your leagues used to rebuild each league's standings with its
+    own set of queries. These check the cost no longer grows with the number
+    of leagues, and that the counts and flags they return are still right."""
+
+    def setUp(self):
+        self.me = User.objects.create_user(username="me", email="me@example.com", password="pw12345678")
+        self.others = [
+            User.objects.create_user(username=f"p{i}", email=f"p{i}@example.com", password="pw12345678")
+            for i in range(4)
+        ]
+        Gameweek.objects.create(number=1, is_scored=True)
+        Gameweek.objects.create(number=2)
+        self.client.force_authenticate(user=self.me)
+
+    def _league(self, n, members=None):
+        league = League.objects.create(name=f"League {n}", owner=self.me, is_public=True, max_members=16)
+        for user in members if members is not None else [self.me, *self.others]:
+            LeagueMembership.objects.create(league=league, user=user)
+        return league
+
+    def _queries(self, url):
+        with CaptureQueriesContext(connection) as queries:
+            response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return len(queries)
+
+    def _assert_flat(self, url):
+        self._league(1)
+        with_one = self._queries(url)
+        for n in range(2, 7):
+            self._league(n)
+        self.assertEqual(self._queries(url), with_one)
+
+    def test_your_league_list_costs_the_same_for_one_league_or_six(self):
+        self._assert_flat(reverse("league-list-create"))
+
+    def test_the_home_summary_costs_the_same_for_one_league_or_six(self):
+        self._assert_flat(reverse("league-home-summary"))
+
+    def test_browsing_public_leagues_costs_the_same_for_one_or_six(self):
+        self._assert_flat(reverse("league-browse"))
+
+    def test_member_counts_and_membership_flags_are_still_right(self):
+        mine = self._league(1)
+        theirs = self._league(2, members=self.others[:2])
+
+        listed = self.client.get(reverse("league-list-create")).data
+        self.assertEqual([(row["name"], row["member_count"], row["is_full"]) for row in listed], [("League 1", 5, False)])
+
+        summary = self.client.get(reverse("league-home-summary")).data
+        self.assertEqual([(row["name"], row["member_count"]) for row in summary], [("League 1", 5)])
+
+        browsed = {row["name"]: row for row in self.client.get(reverse("league-browse")).data}
+        self.assertEqual((browsed["League 1"]["member_count"], browsed["League 1"]["is_member"]), (5, True))
+        self.assertEqual((browsed["League 2"]["member_count"], browsed["League 2"]["is_member"]), (2, False))
+
+        detail = self.client.get(reverse("league-detail", args=[mine.public_id])).data
+        self.assertEqual((detail["member_count"], detail["owner_username"]), (5, "me"))
+        self.assertEqual(len(detail["standings"]), 5)
+        self.assertEqual(
+            self.client.get(reverse("league-detail", args=[theirs.public_id])).status_code,
+            status.HTTP_404_NOT_FOUND,
+        )

@@ -5,11 +5,18 @@ from .models import MAX_MEMBERS_CHOICES, League
 MAX_MEMBERS_VALUES = [choice[0] for choice in MAX_MEMBERS_CHOICES]
 
 
+def member_count(league):
+    """Uses a `member_total` annotation when the view added one, so a list of
+    leagues doesn't count each league's members with a query of its own."""
+    annotated = getattr(league, "member_total", None)
+    return league.memberships.count() if annotated is None else annotated
+
+
 class LeagueSerializer(serializers.ModelSerializer):
     """Full detail, for members only - includes the private join code."""
 
     owner_username = serializers.CharField(source="owner.username", read_only=True)
-    member_count = serializers.IntegerField(source="memberships.count", read_only=True)
+    member_count = serializers.SerializerMethodField()
     is_full = serializers.SerializerMethodField()
 
     class Meta:
@@ -20,15 +27,18 @@ class LeagueSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+    def get_member_count(self, obj):
+        return member_count(obj)
+
     def get_is_full(self, obj):
-        return obj.memberships.count() >= obj.max_members
+        return member_count(obj) >= obj.max_members
 
 
 class PublicLeagueSerializer(serializers.ModelSerializer):
     """Browse listing for public leagues - never exposes the join code or
     who created it (that's only revealed once you've opened the league)."""
 
-    member_count = serializers.IntegerField(source="memberships.count", read_only=True)
+    member_count = serializers.SerializerMethodField()
     is_full = serializers.SerializerMethodField()
     is_member = serializers.SerializerMethodField()
 
@@ -39,10 +49,17 @@ class PublicLeagueSerializer(serializers.ModelSerializer):
             "member_count", "is_full", "is_member", "created_at", "starting_gameweek",
         )
 
+    def get_member_count(self, obj):
+        return member_count(obj)
+
     def get_is_full(self, obj):
-        return obj.memberships.count() >= obj.max_members
+        return member_count(obj) >= obj.max_members
 
     def get_is_member(self, obj):
+        # The browse view passes the viewer's league ids, looked up once.
+        my_league_ids = self.context.get("my_league_ids")
+        if my_league_ids is not None:
+            return obj.id in my_league_ids
         request = self.context.get("request")
         if request is None or not request.user.is_authenticated:
             return False
