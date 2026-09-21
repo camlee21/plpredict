@@ -1,14 +1,16 @@
 from django.db import transaction
-from django.db.models import Count, F, Sum
+from django.db.models import Count, F, Min, Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from backend.fixtures.models import Fixture, current_gameweek_number
+from backend.fixtures.models import Fixture, Gameweek, current_gameweek_number, next_open_gameweek_number
 from backend.predictions.models import Prediction
 from backend.predictions.scoring import calculate_points
+from backend.predictions.serializers import FixtureWithPredictionSerializer
 
 from .models import League, LeagueMembership
 from .serializers import CreateLeagueSerializer, JoinLeagueSerializer, LeagueSerializer, PublicLeagueSerializer
@@ -68,22 +70,97 @@ def _current_gameweek_points(member_ids, gameweek_number):
     return points
 
 
+def _scored_points_by_gameweek(member_ids):
+    """{user_id: {gameweek number: points}} across officially scored
+    gameweeks. Kept per-gameweek rather than pre-totalled because each member
+    only counts the gameweeks from their own join onwards."""
+    by_user = {}
+    rows = (
+        Prediction.objects.filter(user_id__in=member_ids, fixture__gameweek__is_scored=True)
+        .values("user_id", "fixture__gameweek__number")
+        .annotate(total=Sum("points"))
+    )
+    for row in rows:
+        by_user.setdefault(row["user_id"], {})[row["fixture__gameweek__number"]] = row["total"] or 0
+    return by_user
+
+
+def _first_kickoffs(numbers=None):
+    """{gameweek number: earliest kickoff}, for deciding which gameweeks have
+    actually started."""
+    gameweeks = Gameweek.objects.all()
+    if numbers is not None:
+        gameweeks = gameweeks.filter(number__in=numbers)
+    return dict(gameweeks.annotate(first=Min("matches__kickoff_time")).values_list("number", "first"))
+
+
+def _has_started(first_kickoff):
+    return first_kickoff is not None and timezone.now() >= first_kickoff
+
+
+def _predictions_visible(first_kickoff, is_you):
+    """Members can only see each other's predictions once the gameweek has
+    kicked off, so nobody can copy a rival's picks. Your own are always
+    yours to look at."""
+    return is_you or _has_started(first_kickoff)
+
+
+def _counts_towards(membership, gameweek_number):
+    """Whether `gameweek_number` falls within this membership's run in the
+    league. A null starting_gameweek predates gameweek tracking and counts
+    everything."""
+    if gameweek_number is None:
+        return False
+    return membership.starting_gameweek is None or gameweek_number >= membership.starting_gameweek
+
+
+def _standings(league):
+    """Ranked standings rows for `league`. Each member's points only count
+    from the gameweek they joined from, so joining a league never carries
+    points earned beforehand into it.
+
+    Rows carry `has_counted_gameweeks`/`current_gameweek_counts` alongside the
+    numbers so a member who joined too recently for either to mean anything
+    yet can be shown as "-" rather than a misleading 0."""
+    memberships = list(league.memberships.select_related("user"))
+    member_ids = [membership.user_id for membership in memberships]
+    scored_points = _scored_points_by_gameweek(member_ids)
+    scored_numbers = set(Gameweek.objects.filter(is_scored=True).values_list("number", flat=True))
+    current_gameweek = current_gameweek_number()
+    current_points = _current_gameweek_points(member_ids, current_gameweek)
+    # Nobody has a score in a gameweek that hasn't kicked off yet, so the
+    # column reads "-" for everyone until it has.
+    current_started = _has_started(_first_kickoffs([current_gameweek]).get(current_gameweek))
+
+    rows = []
+    for membership in memberships:
+        mine = scored_points.get(membership.user_id, {})
+        counts_current = _counts_towards(membership, current_gameweek)
+        rows.append(
+            {
+                "user_id": membership.user_id,
+                "username": membership.user.username,
+                "starting_gameweek": membership.starting_gameweek,
+                "total_points": sum(
+                    points for number, points in mine.items() if _counts_towards(membership, number)
+                ),
+                # Whether any gameweek has been scored since they joined - not
+                # whether they predicted in one, so sitting a gameweek out
+                # still counts as a real 0 rather than "no score yet".
+                "has_counted_gameweeks": any(
+                    _counts_towards(membership, number) for number in scored_numbers
+                ),
+                "current_gameweek_points": current_points.get(membership.user_id, 0) if counts_current else 0,
+                "current_gameweek_counts": counts_current and current_started,
+            }
+        )
+    return _rank_by_points(rows)
+
+
 def _my_standing(league, user_id):
     """The requesting user's rank/points within `league`, using the same
     standard-competition ranking as the full standings table."""
-    member_ids = list(league.memberships.values_list("user_id", flat=True))
-    totals = {
-        row["user__id"]: row["total"] or 0
-        for row in Prediction.objects.filter(
-            user_id__in=member_ids, fixture__gameweek__is_scored=True
-        )
-        .values("user__id")
-        .annotate(total=Sum("points"))
-    }
-    standings = _rank_by_points(
-        [{"user_id": uid, "total_points": totals.get(uid, 0)} for uid in member_ids]
-    )
-    return next(row for row in standings if row["user_id"] == user_id)
+    return next(row for row in _standings(league) if row["user_id"] == user_id)
 
 
 def _join_league(user, league):
@@ -100,7 +177,9 @@ def _join_league(user, league):
                 {"detail": f"You can only be in up to {MAX_LEAGUES_PER_USER} leagues at a time."},
                 status=status.HTTP_409_CONFLICT,
             )
-        LeagueMembership.objects.create(league=locked_league, user=user)
+        LeagueMembership.objects.create(
+            league=locked_league, user=user, starting_gameweek=next_open_gameweek_number()
+        )
     return Response(LeagueSerializer(locked_league).data)
 
 
@@ -117,6 +196,7 @@ class LeagueListCreateView(APIView):
                     **LeagueSerializer(league).data,
                     "rank_display": mine["rank_display"],
                     "total_points": mine["total_points"],
+                    "has_counted_gameweeks": mine["has_counted_gameweeks"],
                 }
             )
         return Response(data)
@@ -129,8 +209,11 @@ class LeagueListCreateView(APIView):
             )
         serializer = CreateLeagueSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        league = serializer.save(owner=request.user, starting_gameweek=current_gameweek_number())
-        LeagueMembership.objects.create(league=league, user=request.user)
+        starting_gameweek = next_open_gameweek_number()
+        league = serializer.save(owner=request.user, starting_gameweek=starting_gameweek)
+        LeagueMembership.objects.create(
+            league=league, user=request.user, starting_gameweek=starting_gameweek
+        )
         return Response(LeagueSerializer(league).data, status=status.HTTP_201_CREATED)
 
 
@@ -226,36 +309,147 @@ class LeagueDetailView(APIView):
     def get(self, request, public_id):
         league = get_object_or_404(League, public_id=public_id, memberships__user=request.user)
 
-        member_ids = list(league.memberships.values_list("user_id", flat=True))
-        totals = {
-            row["user__id"]: row["total"] or 0
-            for row in Prediction.objects.filter(
-                user_id__in=member_ids, fixture__gameweek__is_scored=True
-            )
-            .values("user__id")
-            .annotate(total=Sum("points"))
-        }
-        current_gameweek = current_gameweek_number()
-        current_points = _current_gameweek_points(member_ids, current_gameweek)
-
-        standings = []
-        for membership in league.memberships.select_related("user"):
-            standings.append(
-                {
-                    "user_id": membership.user_id,
-                    "username": membership.user.username,
-                    "total_points": totals.get(membership.user_id, 0),
-                    "current_gameweek_points": current_points.get(membership.user_id, 0),
-                }
-            )
-        standings = _rank_by_points(standings)
-
         return Response(
             {
                 **LeagueSerializer(league).data,
                 "is_owner": league.owner_id == request.user.id,
+                "current_gameweek": current_gameweek_number(),
+                "standings": _standings(league),
+            }
+        )
+
+
+def _get_membership(request, public_id, user_id):
+    """The (league, membership) pair for a member of a league the requesting
+    user also belongs to. 404s for anyone else, so a league's roster stays
+    invisible to non-members."""
+    league = get_object_or_404(League, public_id=public_id, memberships__user=request.user)
+    membership = get_object_or_404(league.memberships.select_related("user"), user_id=user_id)
+    return league, membership
+
+
+class LeagueMemberDetailView(APIView):
+    """One member's gameweek-by-gameweek record within a league, covering the
+    gameweeks from their own join onwards - the same span their league total
+    is built from."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, public_id, user_id):
+        league, membership = _get_membership(request, public_id, user_id)
+        standing = next(row for row in _standings(league) if row["user_id"] == membership.user_id)
+        current_gameweek = current_gameweek_number()
+        is_you = membership.user_id == request.user.id
+
+        # Career figures span everything they've ever predicted, not just this
+        # league - deliberately a different number from their league total.
+        career = _scored_points_by_gameweek([membership.user_id]).get(membership.user_id, {})
+        career_points = sum(career.values())
+        career_gameweeks = len(career)
+
+        gameweeks = []
+        if current_gameweek is not None:
+            live_points = _current_gameweek_points([membership.user_id], current_gameweek).get(
+                membership.user_id, 0
+            )
+            predicted_counts = dict(
+                Prediction.objects.filter(user_id=membership.user_id)
+                .values_list("fixture__gameweek__number")
+                .annotate(predicted=Count("id"))
+            )
+            played = Gameweek.objects.filter(number__lte=current_gameweek).order_by("number")
+            first_kickoffs = _first_kickoffs([gameweek.number for gameweek in played])
+            for gameweek in played:
+                if not _counts_towards(membership, gameweek.number):
+                    continue
+                gameweeks.append(
+                    {
+                        "gameweek": gameweek.number,
+                        "points": (
+                            career.get(gameweek.number, 0)
+                            if gameweek.is_scored
+                            else live_points
+                            if gameweek.number == current_gameweek
+                            else 0
+                        ),
+                        "is_scored": gameweek.is_scored,
+                        "has_started": _has_started(first_kickoffs.get(gameweek.number)),
+                        "has_predictions": predicted_counts.get(gameweek.number, 0) > 0,
+                        "predictions_visible": _predictions_visible(
+                            first_kickoffs.get(gameweek.number), is_you
+                        ),
+                    }
+                )
+
+        return Response(
+            {
+                "league": {"public_id": league.public_id, "name": league.name},
+                "user_id": membership.user_id,
+                "username": membership.user.username,
+                "starting_gameweek": membership.starting_gameweek,
+                "is_you": is_you,
+                "total_points": standing["total_points"],
+                "has_counted_gameweeks": standing["has_counted_gameweeks"],
+                "current_gameweek_points": standing["current_gameweek_points"],
+                "current_gameweek_counts": standing["current_gameweek_counts"],
                 "current_gameweek": current_gameweek,
-                "standings": standings,
+                "rank_display": standing["rank_display"],
+                "career_points": career_points,
+                "career_gameweeks": career_gameweeks,
+                "average_points": round(career_points / career_gameweeks, 1) if career_gameweeks else None,
+                "gameweeks": gameweeks,
+            }
+        )
+
+
+class LeagueMemberGameweekView(APIView):
+    """One member's actual predictions for a single gameweek of a league,
+    reachable only for gameweeks that have locked and that fall within their
+    own run in the league."""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, public_id, user_id, number):
+        league, membership = _get_membership(request, public_id, user_id)
+        gameweek = get_object_or_404(Gameweek, number=number)
+        is_you = membership.user_id == request.user.id
+
+        if not _counts_towards(membership, number):
+            return Response(
+                {
+                    "detail": (
+                        f"Gameweek {number} is before {membership.user.username} joined this league."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        if not _predictions_visible(_first_kickoffs([number]).get(number), is_you):
+            return Response(
+                {"detail": "Predictions stay hidden until this gameweek kicks off."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        fixtures = list(gameweek.matches.select_related("home_team", "away_team"))
+        predictions = Prediction.objects.filter(user_id=membership.user_id, fixture__gameweek=gameweek)
+        serializer = FixtureWithPredictionSerializer(
+            fixtures, many=True, context={"predictions_by_fixture": {p.fixture_id: p for p in predictions}}
+        )
+        scored_points = _scored_points_by_gameweek([membership.user_id]).get(membership.user_id, {})
+        return Response(
+            {
+                "league": {"public_id": league.public_id, "name": league.name},
+                "user_id": membership.user_id,
+                "username": membership.user.username,
+                "is_you": is_you,
+                "gameweek": number,
+                "deadline": gameweek.deadline,
+                "is_scored": gameweek.is_scored,
+                "points": (
+                    scored_points.get(number, 0)
+                    if gameweek.is_scored
+                    else _current_gameweek_points([membership.user_id], number).get(membership.user_id, 0)
+                ),
+                "fixtures": serializer.data,
             }
         )
 
@@ -276,6 +470,7 @@ class LeagueHomeSummaryView(APIView):
                     "name": league.name,
                     "member_count": league.memberships.count(),
                     "total_points": mine["total_points"],
+                    "has_counted_gameweeks": mine["has_counted_gameweeks"],
                     "rank": mine["rank"],
                     "rank_display": mine["rank_display"],
                 }

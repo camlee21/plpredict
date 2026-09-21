@@ -91,7 +91,7 @@ export default function LeaguePage() {
         {league.max_members} members &middot; Created by {league.owner_username}
       </p>
       {league.starting_gameweek && (
-        <p className="muted">Created during Gameweek {league.starting_gameweek}.</p>
+        <p className="muted">Scores count from Gameweek {league.starting_gameweek} onwards.</p>
       )}
 
       {!league.is_public && (
@@ -131,9 +131,14 @@ export default function LeaguePage() {
           {league.standings.map((row) => (
             <tr key={row.user_id}>
               <td>{row.rank_display}</td>
-              <td>{row.username}</td>
-              <td>{row.current_gameweek_points}</td>
-              <td>{row.total_points}</td>
+              <td>
+                <Link to={`/leagues/${publicId}/players/${row.user_id}`}>{row.username}</Link>
+              </td>
+              {/* A dash, not 0, until a gameweek has actually counted for
+                  them - someone who just joined hasn't scored nothing, they
+                  haven't played yet. */}
+              <td>{row.current_gameweek_counts ? row.current_gameweek_points : "-"}</td>
+              <td>{row.has_counted_gameweeks ? row.total_points : "-"}</td>
             </tr>
           ))}
         </tbody>

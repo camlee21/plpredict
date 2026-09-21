@@ -737,7 +737,7 @@ class LeagueStartingGameweekTests(APITestCase):
 
         self.assertEqual(response.data["starting_gameweek"], 2)
 
-    def test_starting_gameweek_falls_back_to_most_recent_once_season_is_over(self):
+    def test_starting_gameweek_runs_past_the_season_once_every_gameweek_is_scored(self):
         team_a = Team.objects.create(external_id=1, name="Home FC")
         team_b = Team.objects.create(external_id=2, name="Away FC")
         gw = Gameweek.objects.create(number=38, deadline=timezone.now() - timedelta(days=1), is_scored=True)
@@ -747,7 +747,46 @@ class LeagueStartingGameweekTests(APITestCase):
 
         response = self.client.post(reverse("league-list-create"), {"name": "Office League"})
 
-        self.assertEqual(response.data["starting_gameweek"], 38)
+        # Gameweek 38 has already been played and scored, so a league created
+        # now can't count it - there's nothing left this season to count.
+        self.assertEqual(response.data["starting_gameweek"], 39)
+
+    def test_league_created_after_the_deadline_starts_from_the_next_gameweek(self):
+        team_a = Team.objects.create(external_id=1, name="Home FC")
+        team_b = Team.objects.create(external_id=2, name="Away FC")
+        in_progress = Gameweek.objects.create(number=2, deadline=timezone.now() - timedelta(hours=1))
+        Gameweek.objects.create(number=3, deadline=timezone.now() + timedelta(days=7))
+        Fixture.objects.create(
+            external_id=1, gameweek=in_progress, home_team=team_a, away_team=team_b,
+            kickoff_time=timezone.now(),
+        )
+
+        response = self.client.post(reverse("league-list-create"), {"name": "Office League"})
+
+        self.assertEqual(response.data["starting_gameweek"], 3)
+
+    def test_the_owners_membership_starts_from_the_same_gameweek_as_the_league(self):
+        Gameweek.objects.create(number=4, deadline=timezone.now() + timedelta(days=2))
+
+        response = self.client.post(reverse("league-list-create"), {"name": "Office League"})
+
+        membership = LeagueMembership.objects.get(league__public_id=response.data["public_id"])
+        self.assertEqual(membership.starting_gameweek, 4)
+        self.assertEqual(response.data["starting_gameweek"], 4)
+
+    def test_a_member_joining_later_records_their_own_starting_gameweek(self):
+        Gameweek.objects.create(number=4, deadline=timezone.now() + timedelta(days=2))
+        created = self.client.post(reverse("league-list-create"), {"name": "Office League"})
+
+        # Gameweek 4 locks and 5 opens, then someone else joins.
+        Gameweek.objects.filter(number=4).update(deadline=timezone.now() - timedelta(hours=1))
+        Gameweek.objects.create(number=5, deadline=timezone.now() + timedelta(days=7))
+        joiner = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        self.client.force_authenticate(user=joiner)
+        self.client.post(reverse("league-join"), {"code": created.data["code"]})
+
+        membership = LeagueMembership.objects.get(league__public_id=created.data["public_id"], user=joiner)
+        self.assertEqual(membership.starting_gameweek, 5)
 
     def test_browse_listing_includes_starting_gameweek(self):
         gw = Gameweek.objects.create(number=5, deadline=timezone.now() + timedelta(days=1))
@@ -757,3 +796,373 @@ class LeagueStartingGameweekTests(APITestCase):
 
         row = next(r for r in response.data if r["name"] == "Public League")
         self.assertEqual(row["starting_gameweek"], 5)
+
+
+class LeagueScoringStartsFromJoinTests(APITestCase):
+    """A league only counts the gameweeks from each member's own join
+    onwards, so creating or joining one never carries an existing total in."""
+
+    def setUp(self):
+        self.alice = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.bob = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        self.home = Team.objects.create(external_id=1, name="Home FC")
+        self.away = Team.objects.create(external_id=2, name="Away FC")
+
+    def _gameweek(self, number, deadline, *, is_scored=False, finished=False):
+        gameweek = Gameweek.objects.create(number=number, deadline=deadline, is_scored=is_scored)
+        fixture = Fixture.objects.create(
+            external_id=number, gameweek=gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=deadline + timedelta(hours=1),
+            status=Fixture.Status.FINISHED if finished else Fixture.Status.SCHEDULED,
+            home_score=2 if finished else None,
+            away_score=1 if finished else None,
+        )
+        return gameweek, fixture
+
+    def _predict(self, user, fixture, points=None):
+        return Prediction.objects.create(
+            user=user, fixture=fixture, predicted_home_score=2, predicted_away_score=1, points=points
+        )
+
+    def _create_league(self, user, name="Fresh Start"):
+        self.client.force_authenticate(user=user)
+        return self.client.post(reverse("league-list-create"), {"name": name})
+
+    def _standing(self, public_id, username):
+        response = self.client.get(reverse("league-detail", args=[public_id]))
+        return next(row for row in response.data["standings"] if row["username"] == username)
+
+    def test_creating_a_league_after_scoring_points_starts_the_owner_on_zero(self):
+        _, played = self._gameweek(1, timezone.now() - timedelta(days=7), is_scored=True, finished=True)
+        self._predict(self.alice, played, points=5)
+        self._gameweek(2, timezone.now() + timedelta(days=2))
+
+        created = self._create_league(self.alice)
+
+        self.assertEqual(created.data["starting_gameweek"], 2)
+        self.assertEqual(self._standing(created.data["public_id"], "alice")["total_points"], 0)
+
+    def test_points_from_the_starting_gameweek_onwards_do_count(self):
+        _, played = self._gameweek(1, timezone.now() - timedelta(days=7), is_scored=True, finished=True)
+        self._predict(self.alice, played, points=5)
+        _, upcoming = self._gameweek(2, timezone.now() + timedelta(days=2))
+
+        created = self._create_league(self.alice)
+
+        # Gameweek 2 is then played and officially scored.
+        self._predict(self.alice, upcoming, points=4)
+        Gameweek.objects.filter(number=2).update(is_scored=True)
+
+        self.assertEqual(self._standing(created.data["public_id"], "alice")["total_points"], 4)
+
+    def test_joining_later_leaves_the_earlier_gameweeks_out_of_the_total(self):
+        _, first = self._gameweek(1, timezone.now() - timedelta(days=14), is_scored=True, finished=True)
+        self._predict(self.alice, first, points=5)
+        self._predict(self.bob, first, points=9)
+        _, second = self._gameweek(2, timezone.now() + timedelta(days=2))
+
+        created = self._create_league(self.alice)
+
+        # Gameweek 2 locks, is played and scored, and gameweek 3 opens.
+        self._predict(self.alice, second, points=3)
+        self._predict(self.bob, second, points=7)
+        Gameweek.objects.filter(number=2).update(is_scored=True, deadline=timezone.now() - timedelta(hours=1))
+        self._gameweek(3, timezone.now() + timedelta(days=7))
+
+        self.client.force_authenticate(user=self.bob)
+        self.client.post(reverse("league-join"), {"code": created.data["code"]})
+
+        public_id = created.data["public_id"]
+        self.assertEqual(self._standing(public_id, "alice")["total_points"], 3)
+        # Bob's 16 points across gameweeks 1 and 2 both predate his join.
+        self.assertEqual(self._standing(public_id, "bob")["total_points"], 0)
+        self.assertEqual(self._standing(public_id, "bob")["starting_gameweek"], 3)
+
+    def test_live_current_gameweek_points_only_count_from_the_join_gameweek(self):
+        _, live_fixture = self._gameweek(1, timezone.now() + timedelta(days=1))
+        created = self._create_league(self.alice)
+
+        # Gameweek 1 kicks off and its only fixture finishes, still unscored.
+        Gameweek.objects.filter(number=1).update(deadline=timezone.now() - timedelta(hours=4))
+        Fixture.objects.filter(pk=live_fixture.pk).update(
+            status=Fixture.Status.FINISHED, home_score=2, away_score=1,
+            kickoff_time=timezone.now() - timedelta(hours=3),
+        )
+        self._predict(self.alice, live_fixture)
+        self._predict(self.bob, live_fixture)
+        self._gameweek(2, timezone.now() + timedelta(days=7))
+
+        self.client.force_authenticate(user=self.bob)
+        self.client.post(reverse("league-join"), {"code": created.data["code"]})
+
+        public_id = created.data["public_id"]
+        self.assertEqual(self._standing(public_id, "alice")["current_gameweek_points"], 3)
+        # Bob predicted the same scoreline, but joined for gameweek 2 onwards.
+        self.assertEqual(self._standing(public_id, "bob")["current_gameweek_points"], 0)
+        # ...so his gameweek column is "not yet", not a score of nil.
+        self.assertFalse(self._standing(public_id, "bob")["current_gameweek_counts"])
+        self.assertTrue(self._standing(public_id, "alice")["current_gameweek_counts"])
+
+    def test_a_member_with_no_gameweek_behind_them_yet_has_nothing_counted(self):
+        _, first = self._gameweek(1, timezone.now() - timedelta(days=14), is_scored=True, finished=True)
+        self._predict(self.alice, first, points=5)
+        _, second = self._gameweek(2, timezone.now() + timedelta(days=2))
+
+        created = self._create_league(self.alice)
+
+        self._predict(self.alice, second, points=3)
+        Gameweek.objects.filter(number=2).update(is_scored=True, deadline=timezone.now() - timedelta(hours=1))
+        self._gameweek(3, timezone.now() + timedelta(days=7))
+
+        self.client.force_authenticate(user=self.bob)
+        self.client.post(reverse("league-join"), {"code": created.data["code"]})
+
+        public_id = created.data["public_id"]
+        # Nothing has been scored since bob joined for gameweek 3.
+        self.assertFalse(self._standing(public_id, "bob")["has_counted_gameweeks"])
+        self.assertTrue(self._standing(public_id, "alice")["has_counted_gameweeks"])
+
+    def test_the_gameweek_column_reads_as_nothing_until_it_kicks_off(self):
+        # A gameweek nobody has played yet isn't a score of nil for anyone.
+        self._gameweek(1, timezone.now() + timedelta(days=2))
+
+        created = self._create_league(self.alice)
+
+        self.assertFalse(self._standing(created.data["public_id"], "alice")["current_gameweek_counts"])
+
+    def test_home_summary_flags_a_league_with_nothing_counted_yet(self):
+        self._gameweek(1, timezone.now() - timedelta(days=7), is_scored=True)
+        self._gameweek(2, timezone.now() + timedelta(days=2))
+
+        self._create_league(self.alice)
+
+        self.assertFalse(self.client.get(reverse("league-home-summary")).data[0]["has_counted_gameweeks"])
+
+    def test_my_league_listings_use_the_same_starting_point(self):
+        _, played = self._gameweek(1, timezone.now() - timedelta(days=7), is_scored=True, finished=True)
+        self._predict(self.alice, played, points=5)
+        self._gameweek(2, timezone.now() + timedelta(days=2))
+
+        self._create_league(self.alice)
+
+        summary = self.client.get(reverse("league-home-summary")).data[0]
+        listed = self.client.get(reverse("league-list-create")).data[0]
+        self.assertEqual(summary["total_points"], 0)
+        self.assertEqual(listed["total_points"], 0)
+
+    def test_memberships_predating_gameweek_tracking_still_count_everything(self):
+        _, played = self._gameweek(1, timezone.now() - timedelta(days=7), is_scored=True, finished=True)
+        self._predict(self.alice, played, points=5)
+        league = League.objects.create(name="Legacy League", owner=self.alice)
+        LeagueMembership.objects.create(league=league, user=self.alice, starting_gameweek=None)
+
+        self.client.force_authenticate(user=self.alice)
+        self.assertEqual(self._standing(league.public_id, "alice")["total_points"], 5)
+
+
+class LeagueMemberRecordTests(APITestCase):
+    """The per-player breakdown behind a league's standings, and the view of
+    another member's predictions for one of its gameweeks."""
+
+    def setUp(self):
+        self.alice = User.objects.create_user(username="alice", email="alice@example.com", password="pw12345678")
+        self.bob = User.objects.create_user(username="bob", email="bob@example.com", password="pw12345678")
+        self.eve = User.objects.create_user(username="eve", email="eve@example.com", password="pw12345678")
+        self.home = Team.objects.create(external_id=1, name="Home FC")
+        self.away = Team.objects.create(external_id=2, name="Away FC")
+
+        # The league starts at gameweek 2; bob only joins for gameweek 3.
+        self.league = League.objects.create(name="Office League", owner=self.alice, starting_gameweek=2)
+        LeagueMembership.objects.create(league=self.league, user=self.alice, starting_gameweek=2)
+        LeagueMembership.objects.create(league=self.league, user=self.bob, starting_gameweek=3)
+
+        for number, points in ((1, {"alice": 5, "bob": 9}), (2, {"alice": 4, "bob": 6}), (3, {"alice": 2, "bob": 7})):
+            _, fixture = self._gameweek(
+                number, timezone.now() - timedelta(days=14 - number), is_scored=True, finished=True
+            )
+            for username, value in points.items():
+                self._predict(getattr(self, username), fixture, points=value)
+
+        # Gameweek 4 is under way: locked, one finished fixture, not yet scored.
+        _, self.live_fixture = self._gameweek(4, timezone.now() - timedelta(hours=2), finished=True)
+        self._predict(self.alice, self.live_fixture)
+
+    def _gameweek(self, number, deadline, *, is_scored=False, finished=False):
+        gameweek = Gameweek.objects.create(number=number, deadline=deadline, is_scored=is_scored)
+        fixture = Fixture.objects.create(
+            external_id=number, gameweek=gameweek, home_team=self.home, away_team=self.away,
+            kickoff_time=deadline + timedelta(hours=1),
+            status=Fixture.Status.FINISHED if finished else Fixture.Status.SCHEDULED,
+            home_score=2 if finished else None,
+            away_score=1 if finished else None,
+        )
+        return gameweek, fixture
+
+    def _predict(self, user, fixture, points=None):
+        return Prediction.objects.create(
+            user=user, fixture=fixture, predicted_home_score=2, predicted_away_score=1, points=points
+        )
+
+    def _member(self, viewer, subject):
+        self.client.force_authenticate(user=viewer)
+        return self.client.get(reverse("league-member-detail", args=[self.league.public_id, subject.id]))
+
+    def _gameweek_view(self, viewer, subject, number):
+        self.client.force_authenticate(user=viewer)
+        return self.client.get(
+            reverse("league-member-gameweek", args=[self.league.public_id, subject.id, number])
+        )
+
+    def test_lists_each_gameweek_from_the_members_own_start_to_the_current_one(self):
+        response = self._member(self.alice, self.alice)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([row["gameweek"] for row in response.data["gameweeks"]], [2, 3, 4])
+        self.assertEqual([row["points"] for row in response.data["gameweeks"]], [4, 2, 3])
+        self.assertEqual(response.data["total_points"], 6)
+        self.assertEqual(response.data["current_gameweek_points"], 3)
+        self.assertEqual(response.data["starting_gameweek"], 2)
+
+    def test_a_later_joiner_only_sees_their_own_span(self):
+        response = self._member(self.alice, self.bob)
+
+        self.assertEqual([row["gameweek"] for row in response.data["gameweeks"]], [3, 4])
+        self.assertEqual(response.data["username"], "bob")
+        self.assertEqual(response.data["starting_gameweek"], 3)
+        # Gameweeks 1 and 2 are excluded, so only gameweek 3's 7 points count.
+        self.assertEqual(response.data["total_points"], 7)
+
+    def test_flags_which_gameweeks_have_predictions_to_look_at(self):
+        rows = {row["gameweek"]: row for row in self._member(self.alice, self.bob).data["gameweeks"]}
+
+        self.assertTrue(rows[3]["has_predictions"])
+        self.assertTrue(rows[3]["predictions_visible"])
+        self.assertFalse(rows[4]["has_predictions"])
+
+    def test_reports_the_league_and_whether_it_is_you(self):
+        response = self._member(self.bob, self.alice)
+
+        self.assertEqual(response.data["league"]["name"], "Office League")
+        self.assertEqual(response.data["league"]["public_id"], self.league.public_id)
+        self.assertFalse(response.data["is_you"])
+        self.assertTrue(self._member(self.alice, self.alice).data["is_you"])
+
+    def _postpone_gameweek_four(self, *, deadline, kickoff):
+        """Move gameweek 4 (and its only fixture) around in time."""
+        Gameweek.objects.filter(number=4).update(deadline=deadline)
+        Fixture.objects.filter(pk=self.live_fixture.pk).update(kickoff_time=kickoff)
+
+    def test_predictions_stay_hidden_until_the_gameweek_kicks_off(self):
+        self._postpone_gameweek_four(
+            deadline=timezone.now() + timedelta(days=1), kickoff=timezone.now() + timedelta(days=1, hours=1)
+        )
+
+        rows = {row["gameweek"]: row for row in self._member(self.bob, self.alice).data["gameweeks"]}
+
+        self.assertFalse(rows[4]["predictions_visible"])
+        self.assertFalse(rows[4]["has_started"])
+        self.assertTrue(rows[3]["predictions_visible"])
+
+    def test_predictions_stay_hidden_in_the_gap_between_the_deadline_and_kickoff(self):
+        # Predictions have locked, but the first match hasn't kicked off yet -
+        # still nobody else's business.
+        self._postpone_gameweek_four(
+            deadline=timezone.now() - timedelta(minutes=30), kickoff=timezone.now() + timedelta(minutes=30)
+        )
+
+        rows = {row["gameweek"]: row for row in self._member(self.bob, self.alice).data["gameweeks"]}
+
+        self.assertFalse(rows[4]["predictions_visible"])
+
+    def test_you_can_always_see_your_own_predictions(self):
+        self._postpone_gameweek_four(
+            deadline=timezone.now() + timedelta(days=1), kickoff=timezone.now() + timedelta(days=1, hours=1)
+        )
+
+        rows = {row["gameweek"]: row for row in self._member(self.alice, self.alice).data["gameweeks"]}
+
+        self.assertTrue(rows[4]["predictions_visible"])
+        self.assertEqual(self._gameweek_view(self.alice, self.alice, 4).status_code, status.HTTP_200_OK)
+
+    def test_reports_career_totals_alongside_the_league_ones(self):
+        response = self._member(self.bob, self.alice)
+
+        # Alice has 5 + 4 + 2 across three scored gameweeks, but only 4 + 2
+        # of those count in this league.
+        self.assertEqual(response.data["career_points"], 11)
+        self.assertEqual(response.data["career_gameweeks"], 3)
+        self.assertEqual(response.data["average_points"], 3.7)
+        self.assertEqual(response.data["total_points"], 6)
+
+    def test_average_is_absent_when_nothing_has_been_scored_yet(self):
+        loner = User.objects.create_user(username="newbie", email="newbie@example.com", password="pw12345678")
+        LeagueMembership.objects.create(league=self.league, user=loner, starting_gameweek=4)
+
+        response = self._member(self.alice, loner)
+
+        self.assertEqual(response.data["career_points"], 0)
+        self.assertEqual(response.data["career_gameweeks"], 0)
+        self.assertIsNone(response.data["average_points"])
+        self.assertFalse(response.data["has_counted_gameweeks"])
+
+    def test_empty_record_for_a_league_that_starts_in_a_future_gameweek(self):
+        LeagueMembership.objects.filter(league=self.league, user=self.bob).update(starting_gameweek=5)
+
+        response = self._member(self.bob, self.bob)
+
+        self.assertEqual(response.data["gameweeks"], [])
+        self.assertEqual(response.data["total_points"], 0)
+        self.assertEqual(response.data["starting_gameweek"], 5)
+
+    def test_non_members_cannot_see_a_members_record(self):
+        response = self._member(self.eve, self.alice)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_someone_outside_the_league_is_not_a_member_to_look_up(self):
+        self.client.force_authenticate(user=self.alice)
+        response = self.client.get(reverse("league-member-detail", args=[self.league.public_id, self.eve.id]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_requires_authentication(self):
+        response = self.client.get(reverse("league-member-detail", args=[self.league.public_id, self.alice.id]))
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_members_can_see_each_others_predictions_for_a_locked_gameweek(self):
+        response = self._gameweek_view(self.bob, self.alice, 2)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["username"], "alice")
+        self.assertEqual(response.data["points"], 4)
+        prediction = response.data["fixtures"][0]["prediction"]
+        self.assertEqual(prediction["predicted_home_score"], 2)
+        self.assertEqual(prediction["predicted_away_score"], 1)
+
+    def test_live_points_for_the_gameweek_in_progress(self):
+        response = self._gameweek_view(self.bob, self.alice, 4)
+
+        self.assertEqual(response.data["points"], 3)
+        self.assertFalse(response.data["is_scored"])
+
+    def test_cannot_see_predictions_for_a_gameweek_before_they_joined(self):
+        response = self._gameweek_view(self.alice, self.bob, 2)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("before bob joined", response.data["detail"])
+
+    def test_cannot_see_another_members_predictions_before_kickoff(self):
+        self._postpone_gameweek_four(
+            deadline=timezone.now() - timedelta(minutes=30), kickoff=timezone.now() + timedelta(minutes=30)
+        )
+
+        response = self._gameweek_view(self.bob, self.alice, 4)
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("kicks off", response.data["detail"])
+
+    def test_non_members_cannot_see_predictions(self):
+        response = self._gameweek_view(self.eve, self.alice, 2)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_unknown_gameweek_is_a_404(self):
+        response = self._gameweek_view(self.alice, self.alice, 99)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)

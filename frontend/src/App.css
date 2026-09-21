@@ -609,6 +609,15 @@ button.danger:disabled {
   cursor: not-allowed;
 }
 
+/* Sits where a row's action button would, for rows that have none. */
+.league-row-note {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: right;
+}
+
 .standings-table {
   width: 100%;
   border-collapse: collapse;
@@ -634,6 +643,16 @@ button.danger:disabled {
 
 .standings-table tr:last-child td {
   border-bottom: none;
+}
+
+.standings-table a {
+  color: var(--purple);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.standings-table a:hover {
+  text-decoration: underline;
 }
 
 .profile-page .card + .card {

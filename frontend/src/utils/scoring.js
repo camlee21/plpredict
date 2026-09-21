@@ -30,10 +30,10 @@ export function fixturePoints(fixture) {
   );
 }
 
-export function predictionFooter(fixture) {
+export function predictionFooter(fixture, label = "Your prediction") {
   const prediction = fixture.prediction;
   if (!prediction) return "No prediction submitted";
-  const predictedLine = `Your prediction: ${prediction.predicted_home_score}-${prediction.predicted_away_score}`;
+  const predictedLine = `${label}: ${prediction.predicted_home_score}-${prediction.predicted_away_score}`;
   if (!isFixtureFinished(fixture)) return `${predictedLine} · Awaiting result`;
   const points = fixturePoints(fixture);
   return `${predictedLine} · ${points} pt${points === 1 ? "" : "s"} (${POINTS_DESCRIPTIONS[points]})`;

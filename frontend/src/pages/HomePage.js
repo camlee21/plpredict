@@ -116,7 +116,9 @@ export default function HomePage() {
             <div className="league-row" key={league.public_id}>
               <span className="league-row-name">{league.name}</span>
               <span className="league-row-detail muted">{league.rank_display}</span>
-              <span className="league-row-detail muted">{league.total_points} pts</span>
+              <span className="league-row-detail muted">
+                {league.has_counted_gameweeks ? `${league.total_points} pts` : "-"}
+              </span>
               <Link to={`/leagues/${league.public_id}`} className="league-row-action">
                 View league
               </Link>

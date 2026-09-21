@@ -104,14 +104,18 @@ function ScoringDialog({ onClose }) {
             Matches you didn't predict score 0.
           </li>
           <li>
-            In a league table, <strong>Total</strong> adds up all your scored gameweeks. The{" "}
-            <strong>GW</strong> column shows your points so far in the current gameweek - they move
-            into Total once the gameweek is finalised, about 2&frac12; hours after its last kickoff.
-            Players on the same total share a rank (e.g. =3rd).
+            In a league table, <strong>Total</strong> only counts the gameweeks since you joined
+            that league - points you scored beforehand never carry into it, so everyone who joins
+            starts level. Clicking a player's name shows their gameweek-by-gameweek record there.
           </li>
           <li>
-            Predictions lock 1 hour before the first match of the gameweek. Postponed matches aren't
-            scored.
+            The <strong>GW</strong> column shows your points so far in the current gameweek - they
+            move into Total once the gameweek is finalised, about 2&frac12; hours after its last
+            kickoff. Players on the same total share a rank (e.g. =3rd).
+          </li>
+          <li>
+            Predictions lock 1 hour before the first match of the gameweek, and other players'
+            predictions stay hidden until that match kicks off. Postponed matches aren't scored.
           </li>
         </ul>
       </div>

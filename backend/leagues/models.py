@@ -65,6 +65,12 @@ class LeagueMembership(models.Model):
     league = models.ForeignKey(League, related_name="memberships", on_delete=models.CASCADE)
     user = models.ForeignKey(settings.AUTH_USER_MODEL, related_name="league_memberships", on_delete=models.CASCADE)
     joined_at = models.DateTimeField(auto_now_add=True)
+    # The gameweek this member's points start counting from in this league.
+    # Points earned before joining never count towards a league, so someone
+    # joining mid-season starts level rather than bringing a total with them.
+    # Null only for memberships created before any gameweeks were synced,
+    # which count from the very first gameweek.
+    starting_gameweek = models.PositiveSmallIntegerField(null=True, blank=True)
 
     class Meta:
         unique_together = ("league", "user")

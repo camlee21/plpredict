@@ -8,7 +8,14 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Fixture, Gameweek, Player, Team, next_predictable_gameweek_number
+from .models import (
+    Fixture,
+    Gameweek,
+    Player,
+    Team,
+    next_open_gameweek_number,
+    next_predictable_gameweek_number,
+)
 from .services import map_status, parse_kickoff
 
 User = get_user_model()
@@ -249,6 +256,33 @@ class NextPredictableGameweekNumberTests(TestCase):
         Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=2), is_scored=True)
 
         self.assertIsNone(next_predictable_gameweek_number())
+
+
+class NextOpenGameweekNumberTests(TestCase):
+    """What a new league (or a new member of one) starts counting from."""
+
+    def test_none_when_nothing_synced(self):
+        self.assertIsNone(next_open_gameweek_number())
+
+    def test_the_current_gameweek_while_its_predictions_are_still_open(self):
+        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=7), is_scored=True)
+        Gameweek.objects.create(number=2, deadline=timezone.now() + timedelta(days=2))
+
+        self.assertEqual(next_open_gameweek_number(), 2)
+
+    def test_the_next_gameweek_once_the_current_one_has_locked(self):
+        # Gameweek 2 is under way, so its points are already being decided -
+        # a league starting now can only fairly count from gameweek 3.
+        Gameweek.objects.create(number=1, deadline=timezone.now() - timedelta(days=7), is_scored=True)
+        Gameweek.objects.create(number=2, deadline=timezone.now() - timedelta(hours=1))
+        Gameweek.objects.create(number=3, deadline=timezone.now() + timedelta(days=7))
+
+        self.assertEqual(next_open_gameweek_number(), 3)
+
+    def test_past_the_end_of_the_season_once_every_gameweek_is_scored(self):
+        Gameweek.objects.create(number=38, deadline=timezone.now() - timedelta(days=1), is_scored=True)
+
+        self.assertEqual(next_open_gameweek_number(), 39)
 
 
 class HomeGameweekViewTests(APITestCase):

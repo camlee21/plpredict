@@ -8,6 +8,8 @@ import FixturesPage from "./pages/FixturesPage";
 import GameweekScorePage from "./pages/GameweekScorePage";
 import HomePage from "./pages/HomePage";
 import LeaguePage from "./pages/LeaguePage";
+import LeaguePlayerGameweekPage from "./pages/LeaguePlayerGameweekPage";
+import LeaguePlayerPage from "./pages/LeaguePlayerPage";
 import LeaguesPage from "./pages/LeaguesPage";
 import LoginPage from "./pages/LoginPage";
 import PredictionsPage from "./pages/PredictionsPage";
@@ -45,6 +47,22 @@ function App() {
               page's own "members only" message rather than being bounced
               straight to /login. */}
           <Route path="/leagues/:publicId" element={<LeaguePage />} />
+          <Route
+            path="/leagues/:publicId/players/:userId"
+            element={
+              <ProtectedRoute>
+                <LeaguePlayerPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/leagues/:publicId/players/:userId/gameweek/:number"
+            element={
+              <ProtectedRoute>
+                <LeaguePlayerGameweekPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/fixtures"
             element={

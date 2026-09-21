@@ -104,6 +104,19 @@ def next_predictable_gameweek_number():
     return gameweek.number
 
 
+def next_open_gameweek_number():
+    """The earliest gameweek whose predictions haven't locked yet - what a
+    new league, or a new member of one, starts counting points from. Once the
+    current gameweek's deadline has passed its points are already being
+    decided, so a league created then starts from the gameweek after it
+    instead. None if no gameweeks have been synced yet."""
+    predictable = next_predictable_gameweek_number()
+    if predictable is not None:
+        return predictable
+    current = current_gameweek_number()
+    return None if current is None else current + 1
+
+
 class Fixture(models.Model):
     class Status(models.TextChoices):
         SCHEDULED = "SCHEDULED", "Scheduled"
