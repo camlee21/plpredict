@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
 import LoadingIndicator from "../components/LoadingIndicator";
+import ScoringInfo from "../components/ScoringInfo";
 import { formatDateTime } from "../utils/format";
 
 function gameweekOptionLabel(gw) {
@@ -144,7 +145,10 @@ export default function PredictionsPage() {
 
   return (
     <div className="page">
-      <h1>Predict</h1>
+      <div className="heading-row">
+        <h1>Predict</h1>
+        <ScoringInfo />
+      </div>
 
       {gameweeks && gameweeks.length > 0 && (
         <div className="gameweek-selector">

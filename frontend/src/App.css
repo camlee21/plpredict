@@ -240,6 +240,162 @@ button.danger:disabled {
   justify-content: center;
 }
 
+.heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.info-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 6px 0;
+  color: var(--purple);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.info-button:hover {
+  text-decoration: underline;
+}
+
+.info-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  font-family: Georgia, serif;
+  font-size: 0.75rem;
+  font-style: italic;
+  font-weight: 700;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(34, 23, 51, 0.55);
+}
+
+.modal {
+  width: 100%;
+  max-width: 540px;
+  max-height: 88vh;
+  max-height: 88dvh;
+  overflow-y: auto;
+  background: white;
+  border-radius: 12px;
+  padding: 20px 24px 24px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.modal h2,
+.modal h3 {
+  margin: 0;
+}
+
+.modal h3 {
+  margin: 20px 0 8px;
+  font-size: 1.05rem;
+}
+
+.modal-close {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  margin-right: -8px;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: var(--muted);
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.modal-close:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+.scoring-rules,
+.scoring-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scoring-rule {
+  display: flex;
+  gap: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+
+.scoring-rule p {
+  margin: 4px 0 0;
+}
+
+.points-badge {
+  flex: none;
+  align-self: flex-start;
+  width: 60px;
+  padding: 6px 0;
+  border-radius: 8px;
+  background: var(--purple);
+  color: white;
+  font-weight: 800;
+  text-align: center;
+}
+
+.points-badge.points-4 {
+  background: var(--green);
+  color: var(--purple);
+}
+
+.points-badge.points-1 {
+  background: #e8def0;
+  color: var(--purple);
+}
+
+.points-badge.points-0 {
+  background: #eeecf1;
+  color: var(--muted);
+}
+
+.scoring-example {
+  color: var(--text);
+}
+
+.scoring-notes {
+  list-style: disc;
+  padding-left: 20px;
+}
+
+.scoring-notes li {
+  margin-bottom: 8px;
+}
+
 .loading-indicator {
   display: flex;
   align-items: center;
@@ -857,6 +1013,18 @@ button.danger:disabled {
   .card > h2:first-child,
   .card > form > h2:first-child {
     margin-top: 0;
+  }
+
+  .info-button {
+    padding: 10px 0;
+  }
+
+  .modal {
+    padding: 16px 16px 20px;
+  }
+
+  .scoring-rule {
+    gap: 12px;
   }
 
   /* Profile */

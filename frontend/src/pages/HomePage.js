@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
+import ScoringInfo from "../components/ScoringInfo";
 import { gameweekScoreSummary } from "../utils/scoring";
 
 export default function HomePage() {
@@ -61,7 +62,10 @@ export default function HomePage() {
 
       {gwScore !== null && (
         <>
-          <h2>This gameweek's score</h2>
+          <div className="heading-row">
+            <h2>This gameweek's score</h2>
+            <ScoringInfo />
+          </div>
           {gwScore === undefined && <p>Loading...</p>}
           {gwScore && (
             <div className="league-row-list">

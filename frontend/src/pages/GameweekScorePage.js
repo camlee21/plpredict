@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { FixtureRow } from "../components/FixtureRow";
+import ScoringInfo from "../components/ScoringInfo";
 import { gameweekScoreSummary, predictionFooter } from "../utils/scoring";
 
 export default function GameweekScorePage() {
@@ -30,7 +31,10 @@ export default function GameweekScorePage() {
       <Link to="/" className="back-link">
         &larr; Back to home
       </Link>
-      <h1>Gameweek {number} score</h1>
+      <div className="heading-row">
+        <h1>Gameweek {number} score</h1>
+        <ScoringInfo />
+      </div>
       {error && <div className="error-banner">{error}</div>}
 
       {data === undefined && !error && <p>Loading...</p>}

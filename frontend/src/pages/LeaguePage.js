@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
+import ScoringInfo from "../components/ScoringInfo";
 import { useAuth } from "../context/AuthContext";
 
 export default function LeaguePage() {
@@ -113,7 +114,10 @@ export default function LeaguePage() {
         </div>
       )}
 
-      <h2>Standings</h2>
+      <div className="heading-row">
+        <h2>Standings</h2>
+        <ScoringInfo />
+      </div>
       <table className="standings-table">
         <thead>
           <tr>
