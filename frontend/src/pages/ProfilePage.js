@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { apiRequest } from "../api/client";
+import ConfirmDialog from "../components/ConfirmDialog";
 import { useAuth } from "../context/AuthContext";
 import { formatDate } from "../utils/format";
 
@@ -26,6 +27,7 @@ export default function ProfilePage() {
   const [passwordError, setPasswordError] = useState("");
   const [passwordMessage, setPasswordMessage] = useState("");
 
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
 
@@ -78,13 +80,12 @@ export default function ProfilePage() {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    const confirmed = window.confirm(
-      "Delete your account? This will permanently delete all your data - your predictions, " +
-        "any leagues you own, and your league memberships - and cannot be undone."
-    );
-    if (!confirmed) return;
+  const cancelDelete = useCallback(() => {
+    setConfirmingDelete(false);
+    setDeleteError("");
+  }, []);
 
+  const handleDeleteAccount = async () => {
     setDeleteError("");
     setDeleting(true);
     try {
@@ -196,11 +197,27 @@ export default function ProfilePage() {
           Permanently delete your account and all your data - predictions, leagues you own, and
           league memberships. This cannot be undone.
         </p>
-        {deleteError && <div className="error-banner">{deleteError}</div>}
-        <button type="button" className="danger" onClick={handleDeleteAccount} disabled={deleting}>
-          {deleting ? "Deleting..." : "Delete account"}
+        <button type="button" className="danger" onClick={() => setConfirmingDelete(true)}>
+          Delete account
         </button>
       </div>
+
+      {confirmingDelete && (
+        <ConfirmDialog
+          title="Delete your account?"
+          confirmLabel="Delete account"
+          busyLabel="Deleting..."
+          busy={deleting}
+          error={deleteError}
+          onConfirm={handleDeleteAccount}
+          onCancel={cancelDelete}
+        >
+          <p>
+            This permanently deletes all your data - your predictions, any leagues you own, and your
+            league memberships - and it can't be undone.
+          </p>
+        </ConfirmDialog>
+      )}
     </div>
   );
 }

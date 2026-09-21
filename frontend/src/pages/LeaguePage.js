@@ -13,6 +13,7 @@ export default function LeaguePage() {
   const [membersOnly, setMembersOnly] = useState(false);
   const [error, setError] = useState("");
   const [copiedCode, setCopiedCode] = useState(false);
+  const [confirmingLeave, setConfirmingLeave] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState("");
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -44,15 +45,17 @@ export default function LeaguePage() {
     setTimeout(() => setCopiedCode(false), 1500);
   };
 
+  const cancelLeave = useCallback(() => {
+    setConfirmingLeave(false);
+    setLeaveError("");
+  }, []);
+
   const handleLeave = async () => {
-    if (!window.confirm(`Leave "${league.name}"? You'll need to rejoin (by code, or publicly if it's public) to get back in.`)) {
-      return;
-    }
     setLeaveError("");
     setLeaving(true);
     try {
       await apiRequest(`/api/leagues/${publicId}/leave/`, { method: "POST" });
-      navigate("/leagues");
+      navigate("/leagues", { state: { message: `You left "${league.name}".` } });
     } catch (err) {
       setLeaveError(err.message);
       setLeaving(false);
@@ -128,11 +131,32 @@ export default function LeaguePage() {
 
       {!league.is_owner && (
         <div className="league-leave-row">
-          {leaveError && <div className="error-banner">{leaveError}</div>}
-          <button className="secondary" onClick={handleLeave} disabled={leaving}>
-            {leaving ? "Leaving..." : "Leave league"}
+          <button className="secondary" onClick={() => setConfirmingLeave(true)}>
+            Leave league
           </button>
         </div>
+      )}
+
+      {confirmingLeave && (
+        <ConfirmDialog
+          title={`Leave "${league.name}"?`}
+          confirmLabel="Leave league"
+          busyLabel="Leaving..."
+          busy={leaving}
+          error={leaveError}
+          onConfirm={handleLeave}
+          onCancel={cancelLeave}
+        >
+          <p>
+            You'll drop off the standings and need to rejoin{" "}
+            {league.is_public ? "from the public league list" : "with the invite code"} to get back
+            in.
+          </p>
+          <p className="muted">
+            Your predictions and points stay with your account - if you rejoin, this league's total
+            starts again from the gameweek you rejoin.
+          </p>
+        </ConfirmDialog>
       )}
 
       {league.is_owner && (

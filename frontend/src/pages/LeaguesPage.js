@@ -6,7 +6,7 @@ const MAX_MEMBERS_OPTIONS = [4, 8, 16, 32, 64, 128];
 const LEAGUE_NAME_MAX_LENGTH = 32;
 
 export default function LeaguesPage() {
-  // Set by the league page after the owner deletes a league.
+  // Set by the league page after you leave or delete a league.
   const [notice] = useState(useLocation().state?.message ?? "");
   const [leagues, setLeagues] = useState(null);
   const [publicLeagues, setPublicLeagues] = useState(null);
