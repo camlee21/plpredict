@@ -1,4 +1,5 @@
 import { QueryClientProvider } from "@tanstack/react-query";
+import { Analytics } from "@vercel/analytics/react";
 import { useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { restoreSavedCache, saveCacheAsItChanges } from "./api/persist";
@@ -115,6 +116,7 @@ function App() {
             </Routes>
             <Footer />
           </BrowserRouter>
+          <Analytics />
         </FreshnessProvider>
       </AuthProvider>
     </QueryClientProvider>
