@@ -1122,6 +1122,12 @@ button.danger-solid:disabled {
   text-decoration: none;
 }
 
+/* The right-hand end is a snap point too, so a swipe towards the newest
+   gameweek settles with it flush against the edge. */
+.score-strip-card:last-child {
+  scroll-snap-align: end;
+}
+
 .score-strip-card:hover {
   border-color: var(--purple);
 }

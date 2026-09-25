@@ -24,11 +24,19 @@ beforeAll(() => {
       },
     });
   }
+  // Each card's position along the track, `cardStep` apart (0 = no layout).
+  Object.defineProperty(HTMLElement.prototype, "offsetLeft", {
+    configurable: true,
+    get() {
+      if (!this.classList.contains("score-strip-card")) return 0;
+      return [...this.parentNode.children].indexOf(this) * layout.cardStep;
+    },
+  });
 });
 
 let layout;
 beforeEach(() => {
-  layout = { scrollWidth: 900, clientWidth: 300 };
+  layout = { scrollWidth: 900, clientWidth: 300, cardStep: 0 };
 });
 
 const ITEMS = [
@@ -53,8 +61,8 @@ function renderStrip(items = ITEMS) {
   );
   const el = track();
   if (el) {
-    el.scrollBy = jest.fn(({ left }) => {
-      el.scrollLeft = Math.max(0, Math.min(layout.scrollWidth - layout.clientWidth, el.scrollLeft + left));
+    el.scrollTo = jest.fn(({ left }) => {
+      el.scrollLeft = left;
       fireEvent.scroll(el);
     });
   }
@@ -106,7 +114,7 @@ describe("GameweekScoreStrip", () => {
 
     // Left goes back in time, towards gameweek 3.
     userEvent.click(earlierButton());
-    expect(el.scrollBy).toHaveBeenCalledWith(expect.objectContaining({ left: -300 }));
+    expect(el.scrollTo).toHaveBeenCalledWith(expect.objectContaining({ left: 300 }));
     expect(el.scrollLeft).toBe(300);
     expect(recentButton()).toBeEnabled();
 
@@ -116,9 +124,30 @@ describe("GameweekScoreStrip", () => {
 
     // Right comes back towards the newest.
     userEvent.click(recentButton());
-    expect(el.scrollBy).toHaveBeenLastCalledWith(expect.objectContaining({ left: 300 }));
+    expect(el.scrollTo).toHaveBeenLastCalledWith(expect.objectContaining({ left: 300 }));
     expect(el.scrollLeft).toBe(300);
     expect(earlierButton()).toBeEnabled();
+  });
+
+  test("after a swipe part-way back, the arrow stops with the newest gameweek flush right", () => {
+    // Nine cards 100px apart, three to a screen: the far end is at 600.
+    layout = { scrollWidth: 890, clientWidth: 290, cardStep: 100 };
+    const items = Array.from({ length: 9 }, (_, i) => ({ gameweek: i + 1, points: i, hasPredictions: true }));
+    renderStrip(items);
+    const el = track();
+
+    // A swipe back of about one card leaves the track between cards.
+    el.scrollLeft = 530;
+    fireEvent.scroll(el);
+    userEvent.click(recentButton());
+    expect(el.scrollLeft).toBe(600);
+    expect(recentButton()).toBeDisabled();
+
+    // Going back pages by whole cards from there.
+    userEvent.click(earlierButton());
+    expect(el.scrollLeft).toBe(300);
+    userEvent.click(recentButton());
+    expect(el.scrollLeft).toBe(600);
   });
 
   test("dragging with the mouse scrolls the track and suspends snapping", () => {

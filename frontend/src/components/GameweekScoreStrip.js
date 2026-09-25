@@ -59,11 +59,26 @@ export default function GameweekScoreStrip({ items, heading = "Recent scores", c
     return () => observer.disconnect();
   }, [syncArrows, items]);
 
+  // Moves a page of whole cards, worked out from the card nearest the left
+  // edge rather than wherever a swipe happened to leave the track, and never
+  // past either end - so the newest gameweek always finishes flush right.
   const scrollByPage = (direction) => {
     const el = trackRef.current;
     if (!el) return;
-    el.scrollBy({
-      left: direction * el.clientWidth,
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    const cards = el.children;
+    // Distance from one card's left edge to the next (width plus gap).
+    const step = cards.length > 1 ? cards[1].offsetLeft - cards[0].offsetLeft : 0;
+
+    let target = el.scrollLeft + direction * el.clientWidth;
+    if (step > 0) {
+      const perPage = Math.max(1, Math.round(el.clientWidth / step));
+      target = (Math.round(el.scrollLeft / step) + direction * perPage) * step;
+      // Rounding can leave the last card a sliver short of the edge.
+      if (maxScroll - target < step / 2) target = maxScroll;
+    }
+    el.scrollTo({
+      left: Math.max(0, Math.min(maxScroll, target)),
       behavior: prefersReducedMotion() ? "auto" : "smooth",
     });
   };
