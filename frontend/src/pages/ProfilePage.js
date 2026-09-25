@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { api, blockingError, queryKeys, useApi } from "../api/queries";
 import ConfirmDialog from "../components/ConfirmDialog";
+import LoadingIndicator from "../components/LoadingIndicator";
+import PageHeader from "../components/PageHeader";
 import { useAuth } from "../context/AuthContext";
 import { formatDate } from "../utils/format";
 
@@ -56,7 +58,7 @@ export default function ProfilePage() {
       setUsername(updated.username);
       // Your name appears in every league table you're in.
       queryClient.invalidateQueries({ queryKey: queryKeys.leagues, refetchType: "all" });
-      setUsernameMessage("Username updated!");
+      setUsernameMessage("Username saved.");
     } catch (err) {
       setUsernameError(err.message);
     } finally {
@@ -76,7 +78,7 @@ export default function ProfilePage() {
       });
       setCurrentPassword("");
       setNewPassword("");
-      setPasswordMessage("Password updated!");
+      setPasswordMessage("Password changed.");
     } catch (err) {
       setPasswordError(err.message);
     } finally {
@@ -103,125 +105,130 @@ export default function ProfilePage() {
   };
 
   return (
-    <div className="page profile-page">
-      <h1>Profile</h1>
+    <>
+      <PageHeader
+        title={user.username}
+        meta={[
+          user.email,
+          `Joined ${formatDate(user.date_joined)}`,
+          user.has_usable_password_flag ? "Signs in with a password" : "Signs in with Google",
+        ]}
+      />
 
-      <div className="card">
-        <h2>Account</h2>
-        <p className="muted">Email: {user.email}</p>
-        <p className="muted">Member since: {formatDate(user.date_joined)}</p>
-        <p className="muted">
-          {user.has_usable_password_flag ? "You sign in with a username/email and password." : "You sign in with Google."}
-        </p>
-      </div>
-
-      <div className="card">
-        <h2>Your stats</h2>
-        {stats === undefined && !statsError && <p>Loading...</p>}
+      <main className="page profile-page">
+        {stats === undefined && !statsError && <LoadingIndicator label="Loading your stats..." />}
         {statsError && <div className="error-banner">{statsError}</div>}
         {stats && (
-          <div className="profile-stats-row">
-            <div className="profile-stat">
-              <div className="stat-value">{stats.overallPoints}</div>
-              <div className="muted small">Career points</div>
+          <dl className="panel stat-row">
+            <div className="stat">
+              <dt>Career points</dt>
+              <dd>{stats.overallPoints}</dd>
             </div>
-            <div className="profile-stat">
-              <div className="stat-value">{stats.gameweeksPlayed}</div>
-              <div className="muted small">Gameweeks scored</div>
+            <div className="stat">
+              <dt>Gameweeks scored</dt>
+              <dd>{stats.gameweeksPlayed}</dd>
             </div>
-            <div className="profile-stat">
-              <div className="stat-value">
-                {stats.leagueCount}/{MAX_LEAGUES}
-              </div>
-              <div className="muted small">
-                Leagues joined
-              </div>
+            <div className="stat">
+              <dt>Leagues joined</dt>
+              <dd>
+                {stats.leagueCount}
+                <span className="stat-of">/{MAX_LEAGUES}</span>
+              </dd>
             </div>
-          </div>
+          </dl>
         )}
-      </div>
 
-      <form className="card" onSubmit={handleUsernameSubmit}>
-        <h2>Username</h2>
-        <label>
-          Shown in league tables and used to log in.
-          <input
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            maxLength={USERNAME_MAX_LENGTH}
-            required
-          />
-        </label>
-        <p className="muted small">
-          Up to {USERNAME_MAX_LENGTH} characters - letters, numbers and periods only, no spaces.
-        </p>
-        {usernameError && <div className="error-banner">{usernameError}</div>}
-        {usernameMessage && <div className="success-banner">{usernameMessage}</div>}
-        <button
-          type="submit"
-          className="primary"
-          disabled={usernameSaving || !username || username === user.username}
-        >
-          {usernameSaving ? "Saving..." : "Save username"}
-        </button>
-      </form>
+        <div className="section-head">
+          <h2>Account settings</h2>
+        </div>
+        <div className="settings-grid">
+          <form className="panel side-form" onSubmit={handleUsernameSubmit}>
+            <h3>Username</h3>
+            <label>
+              Shown in league tables and used to log in
+              <input
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                maxLength={USERNAME_MAX_LENGTH}
+                required
+              />
+            </label>
+            <p className="muted small">
+              Up to {USERNAME_MAX_LENGTH} characters: letters, numbers and full stops, no spaces.
+            </p>
+            {usernameError && <div className="error-banner">{usernameError}</div>}
+            {usernameMessage && <div className="success-banner">{usernameMessage}</div>}
+            <button
+              type="submit"
+              className="primary"
+              disabled={usernameSaving || !username || username === user.username}
+            >
+              {usernameSaving ? "Saving..." : "Save username"}
+            </button>
+          </form>
 
-      {user.has_usable_password_flag && (
-        <form className="card" onSubmit={handlePasswordSubmit}>
-          <h2>Change password</h2>
-          <label>
-            Current password
-            <input
-              type="password"
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              required
-            />
-          </label>
-          <label>
-            New password
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              required
-            />
-          </label>
-          {passwordError && <div className="error-banner">{passwordError}</div>}
-          {passwordMessage && <div className="success-banner">{passwordMessage}</div>}
-          <button type="submit" className="primary" disabled={passwordSaving || !currentPassword || !newPassword}>
-            {passwordSaving ? "Saving..." : "Change password"}
+          {user.has_usable_password_flag && (
+            <form className="panel side-form" onSubmit={handlePasswordSubmit}>
+              <h3>Password</h3>
+              <label>
+                Current password
+                <input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                />
+              </label>
+              <label>
+                New password
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  autoComplete="new-password"
+                  required
+                />
+              </label>
+              {passwordError && <div className="error-banner">{passwordError}</div>}
+              {passwordMessage && <div className="success-banner">{passwordMessage}</div>}
+              <button type="submit" className="primary" disabled={passwordSaving || !currentPassword || !newPassword}>
+                {passwordSaving ? "Saving..." : "Change password"}
+              </button>
+            </form>
+          )}
+        </div>
+
+        <div className="danger-zone">
+          <div>
+            <h3>Delete account</h3>
+            <p className="muted small">
+              Permanently deletes your predictions, the leagues you created and your league
+              memberships. This can't be undone.
+            </p>
+          </div>
+          <button type="button" className="danger" onClick={() => setConfirmingDelete(true)}>
+            Delete account
           </button>
-        </form>
-      )}
+        </div>
 
-      <div className="card danger-zone">
-        <h2>Delete account</h2>
-        <p className="muted">
-          Permanently delete your account and all your data - predictions, leagues you own, and
-          league memberships. This cannot be undone.
-        </p>
-        <button type="button" className="danger" onClick={() => setConfirmingDelete(true)}>
-          Delete account
-        </button>
-      </div>
-
-      {confirmingDelete && (
-        <ConfirmDialog
-          title="Delete your account?"
-          confirmLabel="Delete account"
-          busyLabel="Deleting..."
-          busy={deleting}
-          error={deleteError}
-          onConfirm={handleDeleteAccount}
-          onCancel={cancelDelete}
-        >
-          <p>
-            This permanently deletes all your data - your predictions, any leagues you own, and your
-            league memberships - and it can't be undone.
-          </p>
-        </ConfirmDialog>
-      )}
-    </div>
+        {confirmingDelete && (
+          <ConfirmDialog
+            title="Delete your account?"
+            confirmLabel="Delete account"
+            busyLabel="Deleting..."
+            busy={deleting}
+            error={deleteError}
+            onConfirm={handleDeleteAccount}
+            onCancel={cancelDelete}
+          >
+            <p>
+              This permanently deletes all your data - your predictions, any leagues you own, and your
+              league memberships - and it can't be undone.
+            </p>
+          </ConfirmDialog>
+        )}
+      </main>
+    </>
   );
 }

@@ -1,11 +1,9 @@
 import { useState } from "react";
 import { api, blockingError, useApi, usePrefetch } from "../api/queries";
 import { FixtureRow } from "../components/FixtureRow";
+import GameweekPicker from "../components/GameweekPicker";
 import LoadingIndicator from "../components/LoadingIndicator";
-
-function gameweekOptionLabel(gw) {
-  return `Gameweek ${gw.number}${gw.lifecycle === "current" ? " (current)" : ""}`;
-}
+import PageHeader from "../components/PageHeader";
 
 export default function FixturesPage() {
   const gameweeksQuery = useApi(api.gameweeks());
@@ -39,47 +37,40 @@ export default function FixturesPage() {
   );
 
   return (
-    <div className="page">
-      <h1>Fixtures &amp; Results</h1>
+    <>
+      <PageHeader title="Fixtures and results" />
 
-      {gameweeks && gameweeks.length > 0 && (
-        <div className="gameweek-selector">
-          <label>
-            Gameweek
-            <select value={selected ?? ""} onChange={(e) => setPicked(Number(e.target.value))}>
-              {gameweeks.map((gw) => (
-                <option key={gw.number} value={gw.number}>
-                  {gameweekOptionLabel(gw)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      )}
+      <main className="page">
+        {gameweeks && gameweeks.length > 0 && (
+          <div className="toolbar">
+            <GameweekPicker gameweeks={gameweeks} selected={selected} onChange={setPicked} />
+          </div>
+        )}
 
-      {loadError && <div className="error-banner">{loadError}</div>}
-      {error && <div className="error-banner">{error}</div>}
+        {loadError && <div className="error-banner">{loadError}</div>}
+        {error && <div className="error-banner">{error}</div>}
 
-      {gameweeks === null && !loadError && <LoadingIndicator label="Loading fixtures..." />}
+        {gameweeks === null && !loadError && <LoadingIndicator label="Loading fixtures..." />}
 
-      {gameweeks && gameweeks.length === 0 && (
-        <p className="muted">
-          Fixtures haven't been loaded yet. They're pulled in automatically from the Premier League,
-          so please check back shortly.
-        </p>
-      )}
+        {gameweeks && gameweeks.length === 0 && (
+          <p className="muted">
+            Fixtures haven't been loaded yet. They're pulled in automatically from the Premier League,
+            so check back shortly.
+          </p>
+        )}
 
-      {gameweeks && gameweeks.length > 0 && !data && !error && (
-        <LoadingIndicator label="Loading gameweek..." />
-      )}
+        {gameweeks && gameweeks.length > 0 && !data && !error && (
+          <LoadingIndicator label="Loading gameweek..." />
+        )}
 
-      {data && (
-        <div className="fixture-list">
-          {data.fixtures.map((fixture) => (
-            <FixtureRow fixture={fixture} key={fixture.id} />
-          ))}
-        </div>
-      )}
-    </div>
+        {data && (
+          <div className="fixture-list">
+            {data.fixtures.map((fixture) => (
+              <FixtureRow fixture={fixture} key={fixture.id} />
+            ))}
+          </div>
+        )}
+      </main>
+    </>
   );
 }

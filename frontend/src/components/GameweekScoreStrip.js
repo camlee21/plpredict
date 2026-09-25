@@ -150,7 +150,7 @@ export default function GameweekScoreStrip({ items, heading = "Recent scores", c
             <Link
               key={item.gameweek}
               to={`/scores/${item.gameweek}`}
-              className="score-strip-card card"
+              className={`score-strip-card${item.hasPredictions ? "" : " is-empty"}`}
               // e.g. handlers that prefetch the gameweek before it's opened.
               {...cardProps?.(item)}
               // Without this the browser starts a native link drag, which
@@ -162,11 +162,11 @@ export default function GameweekScoreStrip({ items, heading = "Recent scores", c
                   : `Gameweek ${item.gameweek}: no predictions`
               }
             >
-              <span className="muted small">Gameweek {item.gameweek}</span>
+              <span className="score-strip-gw">GW{item.gameweek}</span>
               <span className="score-strip-points">
                 {item.hasPredictions ? item.points : "-"}
               </span>
-              <span className="muted small">{item.hasPredictions ? "points" : "no predictions"}</span>
+              <span className="score-strip-label">{item.hasPredictions ? "points" : "no predictions"}</span>
             </Link>
           ))}
         </div>

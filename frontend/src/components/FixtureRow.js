@@ -1,4 +1,4 @@
-import { formatDateTime } from "../utils/format";
+import { formatDate, formatTime } from "../utils/format";
 
 export function FormBadges({ form }) {
   if (!form || form.length === 0) {
@@ -31,7 +31,9 @@ function TeamColumn({ team, goals, align }) {
     <div className={`team-col ${align}`}>
       <div className="team-name-row">
         {align === "away" && badge}
-        <span className="team-name">{team.name}</span>
+        {/* Only one of these shows at a time: the short name on narrow screens. */}
+        <span className="team-name team-name-full">{team.name}</span>
+        <span className="team-name team-name-short">{team.short_name || team.name}</span>
         {align === "home" && badge}
       </div>
       <FormBadges form={team.form} />
@@ -40,25 +42,48 @@ function TeamColumn({ team, goals, align }) {
   );
 }
 
+function defaultFooter(fixture) {
+  if (fixture.status === "SCHEDULED") return formatDate(fixture.kickoff_time);
+  if (fixture.status === "LIVE") {
+    return (
+      <span className="live-tag">
+        <span className="live-dot" aria-hidden="true" />
+        Live
+      </span>
+    );
+  }
+  return "Full time";
+}
+
 export function FixtureRow({ fixture, renderScore, footer }) {
   const isScheduled = fixture.status === "SCHEDULED";
   const isLive = fixture.status === "LIVE";
+  const hasScore = fixture.home_score != null && fixture.away_score != null;
   return (
-    <div className="card fixture-row">
+    <div className={`fixture-row${isLive ? " is-live" : ""}`}>
       <div className="fixture-main">
         <TeamColumn team={fixture.home_team} goals={fixture.home_goals} align="home" />
         {renderScore ? (
           renderScore()
         ) : (
-          <div className={`score-box ${isScheduled ? "pending" : ""} ${isLive ? "live" : ""}`}>
-            {isScheduled ? "vs" : `${fixture.home_score} - ${fixture.away_score}`}
+          <div className={`score-box${isScheduled || !hasScore ? " pending" : ""}${isLive ? " live" : ""}`}>
+            {isScheduled ? (
+              // Kickoff time where the score will go; the date sits underneath.
+              formatTime(fixture.kickoff_time)
+            ) : hasScore ? (
+              <>
+                {fixture.home_score}
+                <span className="score-box-sep">-</span>
+                {fixture.away_score}
+              </>
+            ) : (
+              "vs"
+            )}
           </div>
         )}
         <TeamColumn team={fixture.away_team} goals={fixture.away_goals} align="away" />
       </div>
-      <div className="final-score muted">
-        {footer ?? (isScheduled ? formatDateTime(fixture.kickoff_time) : isLive ? "In progress" : "Full time")}
-      </div>
+      <div className="fixture-footer">{footer ?? defaultFooter(fixture)}</div>
     </div>
   );
 }

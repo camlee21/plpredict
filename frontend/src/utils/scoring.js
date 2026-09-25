@@ -10,11 +10,12 @@ export function calculatePoints(predictedHome, predictedAway, actualHome, actual
   return result(predictedHome, predictedAway) === result(actualHome, actualAway) ? 1 : 0;
 }
 
+// Named as in the "How scoring works" dialog.
 export const POINTS_DESCRIPTIONS = {
-  0: "no correct result",
-  1: "correct result",
-  3: "exact score",
-  4: "exact score, 5+ goals",
+  0: "Wrong result",
+  1: "Correct result",
+  3: "Exact score",
+  4: "Exact score, 5+ goals",
 };
 
 export function isFixtureFinished(fixture) {
@@ -30,13 +31,19 @@ export function fixturePoints(fixture) {
   );
 }
 
-export function predictionFooter(fixture, label = "Your prediction") {
-  const prediction = fixture.prediction;
-  if (!prediction) return "No prediction submitted";
-  const predictedLine = `${label}: ${prediction.predicted_home_score}-${prediction.predicted_away_score}`;
-  if (!isFixtureFinished(fixture)) return `${predictedLine} · Awaiting result`;
-  const points = fixturePoints(fixture);
-  return `${predictedLine} · ${points} pt${points === 1 ? "" : "s"} (${POINTS_DESCRIPTIONS[points]})`;
+// How a gameweek's predictions went, match by match: exact scores (3 or 4
+// points), correct results (1), wrong results (0), and ones still to finish.
+export function predictionTally(fixtures) {
+  const tally = { exact: 0, result: 0, wrong: 0, pending: 0 };
+  fixtures.forEach((fixture) => {
+    if (!fixture.prediction) return;
+    const points = fixturePoints(fixture);
+    if (points == null) tally.pending += 1;
+    else if (points >= 3) tally.exact += 1;
+    else if (points === 1) tally.result += 1;
+    else tally.wrong += 1;
+  });
+  return tally;
 }
 
 export function gameweekScoreSummary(gwScore) {

@@ -3,15 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { apiRequest } from "../api/client";
 import { api, blockingError, queryKeys, useApi, usePrefetch, usePrefetchOnIntent } from "../api/queries";
 import { FixtureRow } from "../components/FixtureRow";
+import GameweekPicker from "../components/GameweekPicker";
 import GameweekScoreStrip from "../components/GameweekScoreStrip";
 import LoadingIndicator from "../components/LoadingIndicator";
+import PageHeader from "../components/PageHeader";
+import PredictionResult from "../components/PredictionResult";
 import ScoringInfo from "../components/ScoringInfo";
+import { useCountdown } from "../utils/countdown";
 import { formatDateTime } from "../utils/format";
-import { predictionFooter } from "../utils/scoring";
-
-function gameweekOptionLabel(gw) {
-  return `Gameweek ${gw.number}${gw.lifecycle === "current" ? " (current)" : ""}`;
-}
 
 const LOCKED_MESSAGES = {
   previous: "This gameweek has already been played.",
@@ -29,26 +28,6 @@ function savedScores(gameweekData) {
     };
   });
   return initial;
-}
-
-function useCountdown(deadline) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  if (!deadline) return null;
-  const diffMs = new Date(deadline).getTime() - now;
-  if (diffMs <= 0) return "Locked";
-
-  const totalSeconds = Math.floor(diffMs / 1000);
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-  return `${hours}h ${minutes}m ${seconds}s`;
 }
 
 export default function PredictionsPage() {
@@ -105,7 +84,8 @@ export default function PredictionsPage() {
   }
 
   const [actionError, setActionError] = useState("");
-  const error = actionError || blockingError(gameweekQuery);
+  // Load problems show at the top; save problems show in the save bar.
+  const queryError = blockingError(gameweekQuery);
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
@@ -149,6 +129,8 @@ export default function PredictionsPage() {
       ...prev,
       [fixtureId]: { ...prev[fixtureId], [side]: value },
     }));
+    // "Saved" no longer holds once you've changed something.
+    setMessage("");
   };
 
   // Fixtures with both boxes validly filled in. A save must cover every
@@ -188,7 +170,7 @@ export default function PredictionsPage() {
       // The response is the gameweek as now saved: put it straight into the
       // cache, which the home page's "this gameweek" card also reads.
       queryClient.setQueryData(queryKeys.predictionsGameweek(selected), updated);
-      setMessage("All predictions saved!");
+      setMessage("Predictions saved");
       setJustSaved(true);
       clearTimeout(justSavedTimeout.current);
       justSavedTimeout.current = setTimeout(() => setJustSaved(false), 1000);
@@ -199,86 +181,74 @@ export default function PredictionsPage() {
     }
   };
 
+  const predictedCount = data ? data.fixtures.length - missingCount : 0;
+
   return (
-    <div className="page">
-      <div className="heading-row">
-        <h1>Predict</h1>
-        <ScoringInfo />
-      </div>
+    <>
+      <PageHeader title="Predict" actions={<ScoringInfo />} />
 
-      {historyError && <p className="muted">Couldn't load your recent scores.</p>}
-      <GameweekScoreStrip
-        items={pastScores}
-        cardProps={(item) => prefetchOnIntent(api.predictionsGameweek(item.gameweek))}
-      />
+      <main className="page">
+        {historyError && <p className="muted">Couldn't load your recent scores.</p>}
+        <GameweekScoreStrip
+          items={pastScores}
+          cardProps={(item) => prefetchOnIntent(api.predictionsGameweek(item.gameweek))}
+        />
 
-      {upcoming.length > 0 && (
-        <div className="gameweek-selector">
-          <label>
-            Gameweek
-            <select value={selected ?? ""} onChange={(e) => setSelected(Number(e.target.value))}>
-              {upcoming.map((gw) => (
-                <option key={gw.number} value={gw.number}>
-                  {gameweekOptionLabel(gw)}
-                </option>
+        {upcoming.length > 0 && (
+          <div className="toolbar">
+            <GameweekPicker gameweeks={upcoming} selected={selected} onChange={setSelected} />
+            {data && !data.is_locked && countdown && (
+              <p className={`deadline${countdown.urgent ? " is-urgent" : ""}`}>
+                Closes in <strong>{countdown.text}</strong>
+              </p>
+            )}
+          </div>
+        )}
+
+        {loadError && <div className="error-banner">{loadError}</div>}
+        {queryError && <div className="error-banner">{queryError}</div>}
+
+        {gameweeks === null && !loadError && <LoadingIndicator label="Loading fixtures..." />}
+
+        {gameweeks && gameweeks.length === 0 && (
+          <p className="muted">
+            Fixtures haven't been loaded yet. They're pulled in automatically from the Premier League,
+            so check back shortly.
+          </p>
+        )}
+
+        {gameweeks && gameweeks.length > 0 && upcoming.length === 0 && (
+          <p className="muted">
+            Every gameweek has been played and scored, so there's nothing left to predict this season.
+            Your scores above show how it went.
+          </p>
+        )}
+
+        {upcoming.length > 0 && !data && !queryError && <LoadingIndicator label="Loading gameweek..." />}
+
+        {data && data.is_locked && (
+          <>
+            <p className="locked-note">{LOCKED_MESSAGES[data.lifecycle]}</p>
+            <div className="fixture-list">
+              {data.fixtures.map((fixture) => (
+                <FixtureRow
+                  fixture={fixture}
+                  key={fixture.id}
+                  // Once a gameweek is locked, what you predicted is the point of
+                  // the page - the bare result alone doesn't tell you how you did.
+                  // A future gameweek you couldn't predict yet keeps its kickoff time.
+                  footer={
+                    fixture.prediction || data.lifecycle !== "future"
+                      ? <PredictionResult fixture={fixture} />
+                      : undefined
+                  }
+                />
               ))}
-            </select>
-          </label>
-        </div>
-      )}
+            </div>
+          </>
+        )}
 
-      {loadError && <div className="error-banner">{loadError}</div>}
-      {error && <div className="error-banner">{error}</div>}
-      {message && <div className="success-banner">{message}</div>}
-
-      {gameweeks === null && !loadError && <LoadingIndicator label="Loading fixtures..." />}
-
-      {gameweeks && gameweeks.length === 0 && (
-        <p className="muted">
-          Fixtures haven't been loaded yet. They're pulled in automatically from the Premier League,
-          so please check back shortly.
-        </p>
-      )}
-
-      {gameweeks && gameweeks.length > 0 && upcoming.length === 0 && (
-        <p className="muted">
-          Every gameweek has been played and scored - there's nothing left to predict this season.
-          Use the scores above to look back over how it went.
-        </p>
-      )}
-
-      {upcoming.length > 0 && !data && !error && <LoadingIndicator label="Loading gameweek..." />}
-
-      {data && data.is_locked && (
-        <>
-          <p className="muted">{LOCKED_MESSAGES[data.lifecycle]}</p>
-          <div className="fixture-list">
-            {data.fixtures.map((fixture) => (
-              <FixtureRow
-                fixture={fixture}
-                key={fixture.id}
-                // Once a gameweek is locked, what you predicted is the point of
-                // the page - the bare result alone doesn't tell you how you did.
-                // A future gameweek you couldn't predict yet keeps its kickoff time.
-                footer={
-                  fixture.prediction || data.lifecycle !== "future"
-                    ? predictionFooter(fixture)
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {data && !data.is_locked && (
-        <>
-          <div className="deadline-banner card">
-            <span>
-              Time left to predict: <strong>{countdown}</strong>
-            </span>
-          </div>
-
+        {data && !data.is_locked && (
           <form onSubmit={handleSubmit}>
             <div className="fixture-list">
               {data.fixtures.map((fixture) => (
@@ -311,24 +281,29 @@ export default function PredictionsPage() {
                   footer={
                     <>
                       {formatDateTime(fixture.kickoff_time)}
-                      {fixture.prediction != null && <span className="saved-tag"> &middot; Saved</span>}
+                      {fixture.prediction != null && <span className="saved-tag">Saved</span>}
                     </>
                   }
                 />
               ))}
             </div>
 
-            <button type="submit" className="primary" disabled={!canSave || saving || justSaved}>
-              {saving ? "Saving..." : justSaved ? "Saved!" : "Save predictions"}
-            </button>
-            {missingCount > 0 && (
-              <p className="muted">
-                Enter a score for every fixture to save - {missingCount} more still needed.
+            {/* Stays in view at the bottom of the screen while you fill in scores. */}
+            <div className="save-bar">
+              <p className={`save-bar-status${actionError ? " is-error" : ""}`} role="status">
+                {actionError ||
+                  message ||
+                  (missingCount > 0
+                    ? `${predictedCount} of ${data.fixtures.length} matches predicted`
+                    : "Every match predicted")}
               </p>
-            )}
+              <button type="submit" className="primary" disabled={!canSave || saving || justSaved}>
+                {saving ? "Saving..." : justSaved ? "Saved" : "Save predictions"}
+              </button>
+            </div>
           </form>
-        </>
-      )}
-    </div>
+        )}
+      </main>
+    </>
   );
 }

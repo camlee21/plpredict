@@ -17,19 +17,19 @@ export default function Navbar() {
       <Link to="/" className="brand">
         PL Predict
       </Link>
+      {/* On phones this becomes a tab bar fixed to the bottom of the screen. */}
       <div className="nav-links">
         <NavLink to="/" end>
           Home
         </NavLink>
+        <NavLink to="/predict">Predict</NavLink>
         <NavLink to="/leagues">Leagues</NavLink>
         <NavLink to="/fixtures">Fixtures</NavLink>
-        <NavLink to="/predict">Predict</NavLink>
       </div>
       <div className="nav-account">
-        <span className="nav-divider" aria-hidden="true" />
-        <Link to="/profile" className="nav-user">
+        <NavLink to="/profile" className="nav-user">
           {user.username}
-        </Link>
+        </NavLink>
         <button className="link-button" onClick={handleLogout}>
           Log out
         </button>

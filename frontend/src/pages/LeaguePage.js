@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { api, blockingError, forgetLeague, useApi, usePrefetchOnIntent } from "../api/queries";
 import ConfirmDialog from "../components/ConfirmDialog";
+import LoadingIndicator from "../components/LoadingIndicator";
+import PageHeader from "../components/PageHeader";
 import ScoringInfo from "../components/ScoringInfo";
 import { useAuth } from "../context/AuthContext";
 
@@ -77,8 +79,8 @@ export default function LeaguePage() {
 
   if (membersOnly) {
     return (
-      <div className="page">
-        <div className="card auth-required-card">
+      <main className="page">
+        <div className="panel auth-required-card">
           <h1>Members only</h1>
           <p>You need to be a member to see this league's details.</p>
           {user ? (
@@ -91,131 +93,144 @@ export default function LeaguePage() {
             </Link>
           )}
         </div>
-      </div>
+      </main>
     );
   }
 
-  if (error) return <div className="page error-banner">{error}</div>;
-  if (!league) return <div className="page">Loading...</div>;
+  const back = (
+    <Link to="/leagues" className="back-link">
+      &larr; Leagues
+    </Link>
+  );
+
+  if (error || !league) {
+    return (
+      <>
+        <PageHeader title="League" back={back} />
+        <main className="page">
+          {error ? <div className="error-banner">{error}</div> : <LoadingIndicator label="Loading league..." />}
+        </main>
+      </>
+    );
+  }
 
   return (
-    <div className="page">
-      <Link to="/leagues" className="back-link">
-        &larr; All leagues
-      </Link>
-      <h1>{league.name}</h1>
-      <p className="muted">
-        {league.is_public ? "Public league" : "Private league"} &middot; {league.member_count}/
-        {league.max_members} members &middot; Created by {league.owner_username}
-      </p>
-      {league.starting_gameweek && (
-        <p className="muted">Scores count from Gameweek {league.starting_gameweek} onwards.</p>
-      )}
+    <>
+      <PageHeader
+        title={league.name}
+        back={back}
+        meta={[
+          league.is_public ? "Public league" : "Private league",
+          `${league.member_count} of ${league.max_members} members`,
+          `Created by ${league.owner_username}`,
+          league.starting_gameweek && `Scores count from Gameweek ${league.starting_gameweek}`,
+        ]}
+        actions={<ScoringInfo />}
+      >
+        {!league.is_public && (
+          <div className="invite-code">
+            <span>
+              Invite code <strong>{league.code}</strong>
+            </span>
+            <button type="button" className="invite-copy" onClick={copyCode}>
+              {copiedCode ? "Copied" : "Copy"}
+            </button>
+          </div>
+        )}
+      </PageHeader>
 
-      {!league.is_public && (
-        <div className="league-code-banner card">
-          <span>
-            Invite code: <strong>{league.code}</strong>
-          </span>
-          <button className="secondary" onClick={copyCode}>
-            {copiedCode ? "Copied!" : "Copy code"}
-          </button>
+      <main className="page">
+        <div className="table-wrap">
+          <table className="standings-table">
+            <thead>
+              <tr>
+                <th className="col-rank">Pos</th>
+                <th>Player</th>
+                <th className="col-num">{league.current_gameweek ? `GW${league.current_gameweek}` : "This GW"}</th>
+                <th className="col-num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {league.standings.map((row) => (
+                <tr key={row.user_id} className={row.user_id === user?.id ? "is-you" : undefined}>
+                  <td className="col-rank">{row.rank_display}</td>
+                  <td>
+                    <Link
+                      to={`/leagues/${publicId}/players/${row.user_id}`}
+                      {...prefetchOnIntent(api.leagueMember(publicId, row.user_id))}
+                    >
+                      {row.username}
+                    </Link>
+                  </td>
+                  {/* A dash, not 0, until a gameweek has actually counted for
+                      them - someone who just joined hasn't scored nothing, they
+                      haven't played yet. */}
+                  <td className="col-num">{row.current_gameweek_counts ? row.current_gameweek_points : "-"}</td>
+                  <td className="col-num col-total">{row.has_counted_gameweeks ? row.total_points : "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      )}
 
-      {!league.is_owner && (
-        <div className="league-leave-row">
-          <button className="secondary" onClick={() => setConfirmingLeave(true)}>
-            Leave league
-          </button>
+        <div className="league-manage">
+          {league.is_owner ? (
+            <>
+              <p className="muted small">You created this league.</p>
+              <button className="danger" onClick={() => setConfirmingDelete(true)}>
+                Delete league
+              </button>
+            </>
+          ) : (
+            <button className="secondary" onClick={() => setConfirmingLeave(true)}>
+              Leave league
+            </button>
+          )}
         </div>
-      )}
 
-      {confirmingLeave && (
-        <ConfirmDialog
-          title={`Leave "${league.name}"?`}
-          confirmLabel="Leave league"
-          busyLabel="Leaving..."
-          busy={leaving}
-          error={leaveError}
-          onConfirm={handleLeave}
-          onCancel={cancelLeave}
-        >
-          <p>
-            You'll drop off the standings and need to rejoin{" "}
-            {league.is_public ? "from the public league list" : "with the invite code"} to get back
-            in.
-          </p>
-          <p className="muted">
-            Your predictions and points stay with your account - if you rejoin, this league's total
-            starts again from the gameweek you rejoin.
-          </p>
-        </ConfirmDialog>
-      )}
+        {confirmingLeave && (
+          <ConfirmDialog
+            title={`Leave "${league.name}"?`}
+            confirmLabel="Leave league"
+            busyLabel="Leaving..."
+            busy={leaving}
+            error={leaveError}
+            onConfirm={handleLeave}
+            onCancel={cancelLeave}
+          >
+            <p>
+              You'll drop off the standings and need to rejoin{" "}
+              {league.is_public ? "from the public league list" : "with the invite code"} to get back
+              in.
+            </p>
+            <p className="muted">
+              Your predictions and points stay with your account. If you rejoin, this league's total
+              starts again from the gameweek you rejoin.
+            </p>
+          </ConfirmDialog>
+        )}
 
-      {league.is_owner && (
-        <div className="league-leave-row">
-          <button className="danger" onClick={() => setConfirmingDelete(true)}>
-            Delete league
-          </button>
-        </div>
-      )}
-
-      {confirmingDelete && (
-        <ConfirmDialog
-          title={`Delete "${league.name}"?`}
-          confirmLabel="Delete league"
-          busyLabel="Deleting..."
-          busy={deleting}
-          error={deleteError}
-          onConfirm={handleDelete}
-          onCancel={cancelDelete}
-        >
-          <p>
-            This removes the league and its standings for all {league.member_count}{" "}
-            {league.member_count === 1 ? "member" : "members"}, and it can't be undone.
-          </p>
-          <p className="muted">
-            Nobody's predictions or points are lost - those belong to each player's account, not to
-            the league.
-          </p>
-        </ConfirmDialog>
-      )}
-
-      <div className="heading-row">
-        <h2>Standings</h2>
-        <ScoringInfo />
-      </div>
-      <table className="standings-table">
-        <thead>
-          <tr>
-            <th>Pos</th>
-            <th>Player</th>
-            <th>{league.current_gameweek ? `GW${league.current_gameweek}` : "Current GW"}</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {league.standings.map((row) => (
-            <tr key={row.user_id}>
-              <td>{row.rank_display}</td>
-              <td>
-                <Link
-                  to={`/leagues/${publicId}/players/${row.user_id}`}
-                  {...prefetchOnIntent(api.leagueMember(publicId, row.user_id))}
-                >
-                  {row.username}
-                </Link>
-              </td>
-              {/* A dash, not 0, until a gameweek has actually counted for
-                  them - someone who just joined hasn't scored nothing, they
-                  haven't played yet. */}
-              <td>{row.current_gameweek_counts ? row.current_gameweek_points : "-"}</td>
-              <td>{row.has_counted_gameweeks ? row.total_points : "-"}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+        {confirmingDelete && (
+          <ConfirmDialog
+            title={`Delete "${league.name}"?`}
+            confirmLabel="Delete league"
+            busyLabel="Deleting..."
+            busy={deleting}
+            error={deleteError}
+            onConfirm={handleDelete}
+            onCancel={cancelDelete}
+          >
+            <p>
+              This removes the league and its standings for all {league.member_count}{" "}
+              {league.member_count === 1 ? "member" : "members"}, and it can't be undone.
+            </p>
+            <p className="muted">
+              Nobody's predictions or points are lost. Those belong to each player's account, not to
+              the league.
+            </p>
+          </ConfirmDialog>
+        )}
+      </main>
+    </>
   );
 }

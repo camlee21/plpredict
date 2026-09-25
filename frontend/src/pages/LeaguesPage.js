@@ -4,6 +4,8 @@ import { Link, useLocation } from "react-router-dom";
 import { apiRequest } from "../api/client";
 import { BROWSE_STALE_TIME } from "../api/freshness";
 import { api, blockingError, queryKeys, useApi, usePrefetchOnIntent } from "../api/queries";
+import LoadingIndicator from "../components/LoadingIndicator";
+import PageHeader from "../components/PageHeader";
 
 const MAX_MEMBERS_OPTIONS = [4, 8, 16, 32, 64, 128];
 const LEAGUE_NAME_MAX_LENGTH = 32;
@@ -97,145 +99,169 @@ export default function LeaguesPage() {
   };
 
   return (
-    <div className="page">
-      <h1>Leagues</h1>
-      {notice && <div className="success-banner">{notice}</div>}
-      {error && <div className="error-banner">{error}</div>}
+    <>
+      <PageHeader title="Leagues" />
 
-      <div className="league-actions">
-        <form className="card" onSubmit={handleCreate}>
-          <h2>Create a league</h2>
-          <label>
-            League name
-            <input
-              value={newLeagueName}
-              onChange={(e) => setNewLeagueName(e.target.value)}
-              placeholder="e.g. Office Sweepstake"
-              maxLength={LEAGUE_NAME_MAX_LENGTH}
-              required
-            />
-          </label>
-          <label>
-            Max members
-            <select value={maxMembers} onChange={(e) => setMaxMembers(Number(e.target.value))}>
-              {MAX_MEMBERS_OPTIONS.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
+      <main className="page leagues-grid">
+        {(notice || error) && (
+          <div className="leagues-banners">
+            {notice && <div className="success-banner">{notice}</div>}
+            {error && <div className="error-banner">{error}</div>}
+          </div>
+        )}
+
+        <section className="leagues-mine">
+          <div className="section-head">
+            <h2>Your leagues</h2>
+          </div>
+          {leagues === null && <LoadingIndicator label="Loading leagues..." />}
+          {leagues && leagues.length === 0 && (
+            <p className="muted">You haven't joined any leagues yet. Join one below, or start your own.</p>
+          )}
+          {leagues && leagues.length > 0 && (
+            <ul className="panel link-list">
+              {leagues.map((league) => (
+                <li key={league.public_id}>
+                  <Link
+                    to={`/leagues/${league.public_id}`}
+                    className="league-mini-row"
+                    {...prefetchOnIntent(api.league(league.public_id))}
+                  >
+                    <span className="league-mini-name">
+                      {league.name}
+                      <span className="league-mini-sub">
+                        {league.is_public ? "Public" : "Private"}, {league.member_count} of {league.max_members} members
+                      </span>
+                    </span>
+                    <span className="league-mini-rank">{league.rank_display}</span>
+                  </Link>
+                </li>
               ))}
-            </select>
-          </label>
-          <label>
-            Visibility
-            <select value={isPublic ? "public" : "private"} onChange={(e) => setIsPublic(e.target.value === "public")}>
-              <option value="public">Public (anyone can join)</option>
-              <option value="private">Private (invite code only)</option>
-            </select>
-          </label>
-          <button className="primary" type="submit" disabled={busy}>
-            Create
-          </button>
-        </form>
+            </ul>
+          )}
+        </section>
 
-        <form className="card" onSubmit={handleJoin}>
-          <h2>Join a private league</h2>
-          <label>
-            6-character code
-            <input
-              value={joinCode}
-              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-              placeholder="e.g. 7GH4LP"
-              maxLength={6}
-              required
-            />
-          </label>
-          <button className="primary" type="submit" disabled={busy}>
-            Join
-          </button>
-        </form>
-      </div>
-
-      <h2>Your leagues</h2>
-      {leagues === null && <p>Loading...</p>}
-      {leagues && leagues.length === 0 && <p className="muted">You haven't joined any leagues yet.</p>}
-      {leagues && leagues.length > 0 && (
-        <div className="league-row-list">
-          {leagues.map((league) => (
-            <div className="league-row" key={league.public_id}>
-              <span className="league-row-name">{league.name}</span>
-              <span className="league-row-detail muted">{league.is_public ? "Public" : "Private"}</span>
-              <span className="league-row-detail muted">
-                {league.member_count}/{league.max_members}
-              </span>
-              <span className="league-row-detail muted">{league.rank_display}</span>
-              <Link
-                to={`/leagues/${league.public_id}`}
-                className="league-row-action"
-                {...prefetchOnIntent(api.league(league.public_id))}
-              >
-                View league
-              </Link>
+        <aside className="leagues-side">
+          <form className="panel side-form" onSubmit={handleJoin}>
+            <h2>Join with a code</h2>
+            <p className="muted small">Private leagues have a 6-character invite code.</p>
+            <div className="inline-field">
+              <label>
+                <span className="visually-hidden">Invite code</span>
+                <input
+                  className="code-input"
+                  value={joinCode}
+                  onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                  placeholder="7GH4LP"
+                  maxLength={6}
+                  required
+                />
+              </label>
+              <button className="primary" type="submit" disabled={busy}>
+                Join
+              </button>
             </div>
-          ))}
-        </div>
-      )}
+          </form>
 
-      <h2>Browse public leagues</h2>
-      <div className="browse-filters">
-        <label>
-          Search by name
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="e.g. Office"
-          />
-        </label>
-        <label>
-          Filter by
-          <select value={browseFilter} onChange={(e) => setBrowseFilter(e.target.value)}>
-            <option value="recent">Recent</option>
-            <option value="capacity_desc">Capacity (High-Low)</option>
-            <option value="capacity_asc">Capacity (Low-High)</option>
-          </select>
-        </label>
-      </div>
-
-      {publicLeagues === null && <p>Loading...</p>}
-      {publicLeagues && publicLeagues.length === 0 && (
-        <p className="muted">No public leagues match your filters.</p>
-      )}
-      {publicLeagues && publicLeagues.length > 0 && (
-        <div className="league-row-list">
-          {publicLeagues.map((league) => (
-            <div className="league-row" key={league.public_id}>
-              <span className="league-row-name">{league.name}</span>
-              <span className="league-row-detail muted">
-                {league.member_count}/{league.max_members}
-              </span>
-              <span className="league-row-detail muted">
-                {league.starting_gameweek ? `GW${league.starting_gameweek}` : "-"}
-              </span>
-              {league.is_member ? (
-                <Link
-                  to={`/leagues/${league.public_id}`}
-                  className="league-row-action"
-                  {...prefetchOnIntent(api.league(league.public_id))}
-                >
-                  View league
-                </Link>
-              ) : (
-                <button
-                  className="league-row-action"
-                  disabled={league.is_full || joiningId === league.public_id}
-                  onClick={() => handleJoinPublic(league.public_id)}
-                >
-                  {league.is_full ? "Full" : joiningId === league.public_id ? "Joining..." : "Join"}
-                </button>
-              )}
+          <form className="panel side-form" onSubmit={handleCreate}>
+            <h2>Start a league</h2>
+            <label>
+              League name
+              <input
+                value={newLeagueName}
+                onChange={(e) => setNewLeagueName(e.target.value)}
+                placeholder="e.g. Office Sweepstake"
+                maxLength={LEAGUE_NAME_MAX_LENGTH}
+                required
+              />
+            </label>
+            <div className="field-pair">
+              <label>
+                Max members
+                <select value={maxMembers} onChange={(e) => setMaxMembers(Number(e.target.value))}>
+                  {MAX_MEMBERS_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Who can join
+                <select value={isPublic ? "public" : "private"} onChange={(e) => setIsPublic(e.target.value === "public")}>
+                  <option value="public">Anyone</option>
+                  <option value="private">Invite code only</option>
+                </select>
+              </label>
             </div>
-          ))}
-        </div>
-      )}
-    </div>
+            <button className="primary" type="submit" disabled={busy}>
+              Create league
+            </button>
+          </form>
+        </aside>
+
+        <section className="leagues-browse">
+          <div className="section-head">
+            <h2>Public leagues</h2>
+          </div>
+          <div className="browse-filters">
+            <label className="browse-search">
+              Search
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="League name"
+              />
+            </label>
+            <label>
+              Sort by
+              <select value={browseFilter} onChange={(e) => setBrowseFilter(e.target.value)}>
+                <option value="recent">Recent</option>
+                <option value="capacity_desc">Capacity (High-Low)</option>
+                <option value="capacity_asc">Capacity (Low-High)</option>
+              </select>
+            </label>
+          </div>
+
+          {publicLeagues === null && <LoadingIndicator label="Loading public leagues..." />}
+          {publicLeagues && publicLeagues.length === 0 && (
+            <p className="muted">No public leagues match that search.</p>
+          )}
+          {publicLeagues && publicLeagues.length > 0 && (
+            <ul className="panel row-list">
+              {publicLeagues.map((league) => (
+                <li className="league-row" key={league.public_id}>
+                  <span className="league-row-name">{league.name}</span>
+                  <span className="league-row-detail muted">
+                    {league.member_count}/{league.max_members} members
+                  </span>
+                  <span className="league-row-detail muted">
+                    {league.starting_gameweek ? `From GW${league.starting_gameweek}` : ""}
+                  </span>
+                  {league.is_member ? (
+                    <Link
+                      to={`/leagues/${league.public_id}`}
+                      className="league-row-action"
+                      {...prefetchOnIntent(api.league(league.public_id))}
+                    >
+                      View
+                    </Link>
+                  ) : (
+                    <button
+                      className="league-row-action is-join"
+                      disabled={league.is_full || joiningId === league.public_id}
+                      onClick={() => handleJoinPublic(league.public_id)}
+                    >
+                      {league.is_full ? "Full" : joiningId === league.public_id ? "Joining..." : "Join"}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </main>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import AuthLayout from "../components/AuthLayout";
 import GoogleSignInButton from "../components/GoogleSignInButton";
 import { useAuth } from "../context/AuthContext";
 
@@ -27,8 +28,8 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="auth-page">
-      <form className="card auth-card" onSubmit={handleSubmit}>
+    <AuthLayout>
+      <form className="auth-card" onSubmit={handleSubmit}>
         <h1>Create your account</h1>
         {error && <div className="error-banner">{error}</div>}
         <label>
@@ -56,16 +57,16 @@ export default function RegisterPage() {
           />
         </label>
         <button type="submit" className="primary" disabled={submitting}>
-          {submitting ? "Creating account..." : "Register"}
+          {submitting ? "Creating account..." : "Create account"}
         </button>
 
-        <div className="divider">or</div>
+        <div className="divider"><span>or</span></div>
         <GoogleSignInButton onError={setError} />
 
-        <p className="muted">
+        <p className="auth-switch">
           Already have an account? <Link to="/login">Log in</Link>
         </p>
       </form>
-    </div>
+    </AuthLayout>
   );
 }
